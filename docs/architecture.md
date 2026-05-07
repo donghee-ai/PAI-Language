@@ -5,11 +5,11 @@
 LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 수행하는 시스템.
 세 파트(Vision, Language, Action)가 WebSocket으로 통신하는 모노레포 구조.
 
-| 파트 | 담당 | 역할 |
-|------|------|------|
-| Vision | 팀원 A | YOLO를 통한 객체 감지, 위치 정보 제공 |
+| 파트     | 담당   | 역할                                               |
+| -------- | ------ | -------------------------------------------------- |
+| Vision   | 팀원 A | YOLO를 통한 객체 감지, 위치 정보 제공              |
 | Language | 담당자 | 사용자 자연어 수신 → OpenAI API → 구조화 명령 생성 |
-| Action | 팀원 B | WS Hub 운영, LeRobot SO-ARM 제어 실행 |
+| Action   | 팀원 B | WS Hub 운영, LeRobot SO-ARM 제어 실행              |
 
 ---
 
@@ -20,12 +20,12 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 │                      PAI_LE (mono-repo)                      │
 │                                                              │
 │   [User]                                                     │
-│     │ stdin (자연어)                                          │
+│     │ stdin (자연어)                                         │
 │     ▼                                                        │
-│  [Language] ─────────── WS (robot_command) ──────────────┐  │
+│  [Language] ─────────── WS (robot_command) ──────────────┐   │
 │     ▲                                                     ▼  │
 │     │ relay (vision_update)               [Action = WS Hub]  │
-│     └───────────────────────────────────────── WS ──────┘   │
+│     └───────────────────────────────────────── WS ──────┘    │
 │                                                     ▲        │
 │                              [Vision] ─── WS ───────┘        │
 │                               (vision_update)                │
@@ -33,6 +33,7 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 ```
 
 **핵심 원칙:**
+
 - Action 서버가 WebSocket 허브 역할을 겸함
 - Vision과 Language 모두 Action에 클라이언트로 접속
 - Action이 수신한 `vision_update`를 Language에 relay (broadcast)
@@ -85,11 +86,13 @@ PAI_LE/
 ## 4. 파트별 역할 상세
 
 ### Vision
+
 - YOLO 모델로 카메라 프레임 실시간 분석
 - 감지된 객체(label, bbox, center_pixel 등) JSON을 `vision_update` 메시지로 Action Hub에 전송
 - 출력 형식: `shared/schemas/vision.py` 참조
 
 ### Language (담당 파트)
+
 - CLI(stdin)로 사용자 자연어 명령 수신
 - Action Hub를 통해 relay된 `vision_update`에서 최소 context 추출 (label, center_pixel)
 - `prompt_builder`가 "사용자 입력 + 현재 감지 객체"를 합쳐 OpenAI에 전달
@@ -97,6 +100,7 @@ PAI_LE/
 - Action의 `action_status` 피드백을 수신해 사용자에게 결과 출력
 
 ### Action
+
 - WebSocket 서버(Hub) 운영
 - Vision, Language 클라이언트 연결 관리
 - `vision_update`를 Language에 relay
@@ -109,11 +113,11 @@ PAI_LE/
 
 전체 메시지는 공통 envelope을 사용한다. 상세 스키마는 `docs/command_schema.md` 참조.
 
-| type | 방향 | 설명 |
-|------|------|------|
-| `vision_update` | Vision → Action Hub | YOLO 프레임 감지 결과 |
-| `vision_update` | Action Hub → Language | 위 메시지를 relay |
-| `robot_command` | Language → Action Hub | 파싱된 로봇 명령 |
+| type            | 방향                  | 설명                  |
+| --------------- | --------------------- | --------------------- |
+| `vision_update` | Vision → Action Hub   | YOLO 프레임 감지 결과 |
+| `vision_update` | Action Hub → Language | 위 메시지를 relay     |
+| `robot_command` | Language → Action Hub | 파싱된 로봇 명령      |
 | `action_status` | Action Hub → Language | 명령 실행 상태 피드백 |
 
 ---
@@ -172,23 +176,23 @@ PAI_LE/
 
 ## 8. 기술 스택
 
-| 항목 | 선택 |
-|------|------|
-| 언어 | Python 3.10+ |
-| WebSocket | `websockets` 라이브러리 (asyncio 기반) |
-| OpenAI | `openai` SDK (async) |
-| 데이터 검증 | `pydantic` v2 |
-| 비동기 | `asyncio` |
-| 로봇 제어 | LeRobot + SO-ARM100 |
-| 객체 감지 | YOLO11s-seg |
+| 항목        | 선택                                   |
+| ----------- | -------------------------------------- |
+| 언어        | Python 3.10+                           |
+| WebSocket   | `websockets` 라이브러리 (asyncio 기반) |
+| OpenAI      | `openai` SDK (async)                   |
+| 데이터 검증 | `pydantic` v2                          |
+| 비동기      | `asyncio`                              |
+| 로봇 제어   | LeRobot + SO-ARM100                    |
+| 객체 감지   | YOLO11s-seg                            |
 
 ---
 
 ## 9. 미결 사항
 
-| 항목 | 상태 | 비고 |
-|------|------|------|
-| `robot_command` 스키마 필드 | 초안 작성 완료, Action팀 합의 필요 | `docs/command_schema.md` |
-| YOLO target label 목록 확정 | Vision팀과 합의 필요 | ball, basket 등 |
-| Action Hub WS 포트/URL | Action팀 결정 필요 | `shared/constants.py`에 반영 |
-| OpenAI 모델 선택 | 추후 결정 | 초안: gpt-4o-mini |
+| 항목                        | 상태                               | 비고                         |
+| --------------------------- | ---------------------------------- | ---------------------------- |
+| `robot_command` 스키마 필드 | 초안 작성 완료, Action팀 합의 필요 | `docs/command_schema.md`     |
+| YOLO target label 목록 확정 | Vision팀과 합의 필요               | ball, basket 등              |
+| Action Hub WS 포트/URL      | Action팀 결정 필요                 | `shared/constants.py`에 반영 |
+| OpenAI 모델 선택            | 추후 결정                          | 초안: gpt-4o-mini            |
