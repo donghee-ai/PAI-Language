@@ -1,7 +1,11 @@
 """프로젝트 공통 상수 — WS URL, 토픽 이름, 라벨 등."""
 
 # WebSocket
-WS_URL = "wss://vision.yeoun.org/ws/scenes"
+# 직결합 단계: Language가 PAI-Vision의 /ws/scenes 서버에 직접 붙는다.
+# 기본값은 로컬 개발용. 원격 배포 시 환경변수 VISION_WS_URL로 덮어쓴다
+# (예: VISION_WS_URL=wss://vision.yeoun.org/ws/scenes).
+# Action Hub 도입 시 ACTION_WS_URL 을 별도 상수/환경변수로 추가하고 듀얼 클라이언트로 전환.
+VISION_WS_URL = "ws://localhost:8000/ws/scenes"
 
 # 메시지 타입
 TOPIC_VISION_UPDATE = "vision_update"

@@ -2,7 +2,11 @@
 
 > **상태**: 초안 — Action팀 리뷰 및 합의 필요  
 > **작성일**: 2026-05-07  
-> **작성**: Language 파트
+> **작성**: Language 파트  
+> **현 단계 (2026-05-08~)**: Action Hub 미구현 → Language는 PAI-Vision 서버에 직결합되어
+> `vision_update`만 수신한다. 본 문서의 `robot_command` / `action_status` 메시지는
+> **wire로 전송되지 않으며**, 사용자 입력 → LLM 파싱 결과는 stdout으로만 출력된다.
+> Action Hub가 도입되면 `ACTION_HUB_ENABLED=1` 설정으로 활성화된다.
 
 ---
 
@@ -262,6 +266,7 @@ User: "아무거나 해봐"
 | `pick_and_place` 지원 여부 | 복합 동작으로 제안 | Action에서 단일 명령으로 처리 가능한지, 아니면 `pick` + `place` 분리 전송해야 하는지 |
 | `vision_confirmed=false` 처리 | Language가 그대로 전송 | Action이 자체적으로 Vision 재탐색할지, 아니면 Language에서 차단할지 |
 | WS 서버 포트 / URL | 미정 | `shared/constants.py`에 반영 필요 |
+| Envelope wire 적용 위치 | 현재: PAI_LE 측 어댑터로 흡수 | Vision 측에서 envelope을 씌워 보내는 것으로 통일할지(팀원 A PR), 아니면 모든 소비자가 어댑터로 처리할지 |
 
 ---
 

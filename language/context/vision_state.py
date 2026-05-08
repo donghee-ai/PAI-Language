@@ -2,12 +2,20 @@
 
 전체 vision_update JSON을 수신하되, Language에 필요한 최소 필드만 보관한다:
   - label, center_pixel, confidence, status
+
+검증 전략: 우선 shared/schemas/vision.py의 Pydantic VisionUpdate로 검증을 시도해
+schema drift를 빠르게 감지한다. 검증 실패 시(스펙 불일치/외부 변경)에도 서비스가
+죽지 않도록 dict 기반 best-effort 파싱으로 graceful fallback한다.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from pydantic import ValidationError
+
+from shared.schemas.vision import VisionUpdate
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +25,7 @@ class DetectedObject:
     label: str
     center_pixel: list[int]
     confidence: float
-    status: str = "tracked"
+    status: str = "detected"
 
 
 class VisionState:
@@ -29,9 +37,35 @@ class VisionState:
     def update(self, data: dict) -> None:
         """vision_update 메시지의 data 페이로드를 받아 필터링 후 저장.
 
-        개별 객체 파싱이 실패해도 다른 객체는 유지하며, 형식이 깨진
-        메시지로 인해 _recv_loop이 죽지 않도록 방어한다.
+        1순위: VisionUpdate Pydantic 모델로 typed 검증.
+        2순위(실패 시): dict 기반 best-effort 파싱.
+
+        어느 쪽이든 개별 객체 파싱 실패가 다른 객체나 _recv_loop을 죽이지 않도록
+        방어한다.
         """
+        try:
+            update = VisionUpdate.model_validate(data)
+        except ValidationError as exc:
+            log.warning(
+                "VisionUpdate schema 검증 실패, dict 기반 fallback (%s)", exc.error_count()
+            )
+            self._update_from_dict(data)
+            return
+
+        self._objects = [
+            DetectedObject(
+                label=obj.label,
+                center_pixel=list(obj.center_pixel),
+                confidence=obj.confidence,
+                status=obj.status,
+            )
+            for obj in update.objects
+            if len(obj.center_pixel) == 2
+        ]
+        log.debug("vision 업데이트(typed): %d개 객체", len(self._objects))
+
+    def _update_from_dict(self, data: dict) -> None:
+        """Pydantic 검증 실패 시 best-effort dict 파싱."""
         raw_objects = data.get("objects", [])
         if not isinstance(raw_objects, list):
             log.warning("vision_update.objects 필드가 list가 아님: %r", raw_objects)
@@ -58,13 +92,13 @@ class VisionState:
                     label=str(label),
                     center_pixel=[int(cp[0]), int(cp[1])],
                     confidence=float(confidence),
-                    status=str(obj.get("status", "tracked")),
+                    status=str(obj.get("status", "detected")),
                 ))
             except (TypeError, ValueError) as exc:
                 log.warning("vision 객체 타입 변환 실패(%s): %r", exc, obj)
 
         self._objects = parsed
-        log.debug("vision 업데이트: %d개 객체", len(self._objects))
+        log.debug("vision 업데이트(fallback): %d개 객체", len(self._objects))
 
     def get_objects(self) -> list[DetectedObject]:
         return list(self._objects)

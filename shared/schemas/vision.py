@@ -15,7 +15,7 @@ class VisionObject(BaseModel):
     bbox_xyxy: list[float]
     center_pixel: list[int]
     area_pixels: int | None = None
-    status: str = "tracked"
+    status: str = "detected"
 
 
 class VisionUpdate(BaseModel):

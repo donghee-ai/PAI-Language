@@ -15,6 +15,38 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 
 ## 2. 전체 토폴로지
 
+> **현 단계 (2026-05-08~) — Vision 직결합**: Action Hub가 아직 구현되지 않았고
+> PAI-Vision이 자체적으로 WS 서버(`/ws/scenes`)를 운영하므로, Language는 PAI-Vision에
+> 직접 클라이언트로 접속한다. `robot_command` / `action_status`는 Action Hub가 생기기
+> 전까지 송신하지 않고 stdout으로만 출력한다.
+
+### 2.1 현 단계 토폴로지 (Vision 직결합)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      PAI_LE (직결합 단계)                     │
+│                                                              │
+│   [User]                                                     │
+│     │ stdin (자연어)                                         │
+│     ▼                                                        │
+│  [Language] ──────── WS (vision_update 수신만) ─────► [Vision = WS 서버] │
+│     │                                                        │
+│     ▼ stdout                                                 │
+│  [명령 파싱 결과 출력]   ※ robot_command 미전송              │
+│                                                              │
+│   ※ Action Hub 미구현 — robot_command/action_status 비활성    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**현 단계 핵심:**
+
+- PAI-Vision이 이미 WS 서버 (`@app.websocket("/ws/scenes")`)
+- Language는 envelope 없이 송출되는 raw scene을 수신 후 PAI_LE 측 어댑터에서
+  표준 envelope(`{type, timestamp, sender, data}`)으로 정규화
+- `Config.action_hub_enabled = False` 기본값 → 명령은 stdout 출력만
+
+### 2.2 목표 토폴로지 (Action Hub 도입 후)
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                      PAI_LE (mono-repo)                      │
@@ -32,7 +64,7 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**핵심 원칙:**
+**목표 단계 핵심 원칙:**
 
 - Action 서버가 WebSocket 허브 역할을 겸함
 - Vision과 Language 모두 Action에 클라이언트로 접속
@@ -113,6 +145,16 @@ PAI_LE/
 
 전체 메시지는 공통 envelope을 사용한다. 상세 스키마는 `docs/command_schema.md` 참조.
 
+### 현 단계 (Vision 직결합)
+
+| type            | 방향              | 설명                                                          |
+| --------------- | ----------------- | ------------------------------------------------------------- |
+| (envelope 없음) | Vision → Language | raw scene을 PAI_LE 어댑터에서 `vision_update`로 정규화         |
+| `robot_command` | (미전송)          | Action Hub 부재 — stdout 출력만                               |
+| `action_status` | (미수신)          | Action Hub 부재                                               |
+
+### 목표 단계 (Action Hub 도입 후)
+
 | type            | 방향                  | 설명                  |
 | --------------- | --------------------- | --------------------- |
 | `vision_update` | Vision → Action Hub   | YOLO 프레임 감지 결과 |
@@ -190,9 +232,10 @@ PAI_LE/
 
 ## 9. 미결 사항
 
-| 항목                        | 상태                               | 비고                         |
-| --------------------------- | ---------------------------------- | ---------------------------- |
-| `robot_command` 스키마 필드 | 초안 작성 완료, Action팀 합의 필요 | `docs/command_schema.md`     |
-| YOLO target label 목록 확정 | Vision팀과 합의 필요               | ball, basket 등              |
-| Action Hub WS 포트/URL      | Action팀 결정 필요                 | `shared/constants.py`에 반영 |
-| OpenAI 모델 선택            | 추후 결정                          | 초안: gpt-4o-mini            |
+| 항목                        | 상태                                     | 비고                                                  |
+| --------------------------- | ---------------------------------------- | ----------------------------------------------------- |
+| Action Hub 구현             | **미구현 — Vision 직결합으로 임시 우회** | 완성 시 `ACTION_WS_URL` 추가 + 듀얼 클라이언트로 전환 |
+| Envelope 표준 wire 적용     | PAI_LE 측 어댑터로 흡수 중               | 팀원 A와 합의 후 PAI-Vision 측 PR로 이전 예정         |
+| `robot_command` 스키마 필드 | 초안 작성 완료, Action팀 합의 필요       | `docs/command_schema.md`                              |
+| YOLO target label 목록 확정 | Vision팀과 합의 필요                     | ball, basket 등                                       |
+| OpenAI 모델 선택            | 추후 결정                                | 초안: gpt-4o-mini                                     |

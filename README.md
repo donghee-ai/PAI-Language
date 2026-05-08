@@ -42,9 +42,10 @@ cp .env.example .env
 `.env` 파일을 열어 OpenAI API 키를 입력:
 
 ```
-OPENAI_API_KEY=sk-...      # 필수
-OPENAI_MODEL=gpt-4o-mini   # 선택 (기본값: gpt-4o-mini)
-WS_URL=wss://...           # 선택 (기본값: shared/constants.py 참고)
+OPENAI_API_KEY=sk-...           # 필수
+OPENAI_MODEL=gpt-4o-mini        # 선택 (기본값: gpt-4o-mini)
+VISION_WS_URL=wss://...         # 선택 (기본값: shared/constants.py 참고). PAI-Vision의 /ws/scenes URL
+ACTION_HUB_ENABLED=0            # 선택. 1로 설정 시 robot_command를 WS로 전송 (Action Hub 필요)
 ```
 
 ### 3. 실행

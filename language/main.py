@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 import openai
@@ -26,6 +27,10 @@ from language.llm.response_parser import parse_llm_response
 from language.ws.client import HubClient
 from language.ws.dispatcher import Dispatcher
 
+# vision_update 로그 throttle 주기 — 카메라가 보통 10Hz로 송출하므로 매 프레임 INFO를
+# 찍으면 사용자 입력 prompt가 묻힌다. 매 프레임은 DEBUG로, INFO 요약은 이 간격으로만.
+VISION_LOG_THROTTLE_SEC = 1.0
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -42,6 +47,7 @@ class LanguageApp:
         self.llm = LLMClient(config)
         self.hub = HubClient(config)
         self.dispatcher = Dispatcher()
+        self._last_vision_info_log = 0.0
 
         # 메시지 핸들러 등록
         self.dispatcher.register(TOPIC_VISION_UPDATE, self._on_vision_update)
@@ -52,7 +58,12 @@ class LanguageApp:
 
     async def _on_vision_update(self, msg: dict) -> None:
         self.vision.update(msg.get("data", {}))
-        log.info("Vision 업데이트: %s", self.vision.to_context_string())
+        # 매 프레임은 DEBUG로만 (10Hz 폭주 방지). INFO는 throttle.
+        log.debug("Vision 업데이트: %s", self.vision.to_context_string())
+        now = time.monotonic()
+        if now - self._last_vision_info_log >= VISION_LOG_THROTTLE_SEC:
+            log.info("Vision 상태: %s", self.vision.to_context_string())
+            self._last_vision_info_log = now
 
     async def _on_action_status(self, msg: dict) -> None:
         data = msg.get("data", {})
@@ -91,7 +102,16 @@ class LanguageApp:
         # 대상 객체가 카메라에 실제로 보이는지 확인
         command.vision_confirmed = self.vision.has_label(command.target)
 
-        # envelope 구성 후 전송
+        # envelope 구성 후 전송 — Action Hub가 활성화된 경우에만.
+        # 현재 직결합 단계(Vision 서버에 직접 붙음)에서는 송신 대상이 없으므로
+        # 파싱 결과를 stdout에만 출력한다.
+        if not self.config.action_hub_enabled:
+            print(f"[명령 파싱] action={command.action.value}, "
+                  f"target={command.target}, destination={command.destination}")
+            print(f"[근거] {command.reasoning}")
+            print("[명령 미전송 — Action Hub 없음]")
+            return
+
         envelope = {
             "type": TOPIC_ROBOT_COMMAND,
             "timestamp": datetime.now(timezone.utc).isoformat(),
