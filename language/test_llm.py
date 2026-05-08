@@ -55,7 +55,7 @@ async def main() -> None:
 
             print(f"\n[LLM 원본 응답]\n{raw}")
 
-            cmd = parse_llm_response(raw, user_text, vision_confirmed=True)
+            cmd = parse_llm_response(raw, user_text)
 
             print(f"\n[파싱 결과]")
             print(json.dumps(cmd.model_dump(), indent=2, ensure_ascii=False))

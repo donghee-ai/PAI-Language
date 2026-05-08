@@ -23,6 +23,7 @@ class HubClient:
         self._ws: ClientConnection | None = None
         self._on_message: Callable[[dict], Coroutine] | None = None
         self._connected = asyncio.Event()
+        self._dispatch_tasks: set[asyncio.Task] = set()
 
     # -- public API --
 
@@ -30,9 +31,13 @@ class HubClient:
         """수신 메시지 콜백 등록."""
         self._on_message = handler
 
-    async def send(self, payload: dict) -> None:
-        """JSON 메시지 전송. 연결될 때까지 대기."""
-        await self._connected.wait()
+    async def send(self, payload: dict, timeout: float = 10.0) -> None:
+        """JSON 메시지 전송. 연결될 때까지 최대 timeout초 대기."""
+        try:
+            await asyncio.wait_for(self._connected.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            log.error("WS 연결 대기 타임아웃 (%.1f초)", timeout)
+            raise
         if self._ws:
             await self._ws.send(json.dumps(payload, ensure_ascii=False))
             log.debug("sent: %s", payload.get("type"))
@@ -75,4 +80,14 @@ class HubClient:
                 log.warning("비정상 메시지 수신 (JSON 파싱 실패)")
                 continue
             if self._on_message:
-                await self._on_message(msg)
+                # fire-and-forget: 핸들러 처리가 다음 메시지 수신을 막지 않도록 한다.
+                task = asyncio.create_task(self._safe_dispatch(msg))
+                self._dispatch_tasks.add(task)
+                task.add_done_callback(self._dispatch_tasks.discard)
+
+    async def _safe_dispatch(self, msg: dict) -> None:
+        """핸들러 예외가 _recv_loop을 죽이지 않도록 격리."""
+        try:
+            await self._on_message(msg)  # type: ignore[misc]
+        except Exception:
+            log.exception("메시지 처리 중 예외: type=%s", msg.get("type"))

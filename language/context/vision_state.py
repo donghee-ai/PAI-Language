@@ -27,18 +27,43 @@ class VisionState:
         self._objects: list[DetectedObject] = []
 
     def update(self, data: dict) -> None:
-        """vision_update 메시지의 data 페이로드를 받아 필터링 후 저장."""
+        """vision_update 메시지의 data 페이로드를 받아 필터링 후 저장.
+
+        개별 객체 파싱이 실패해도 다른 객체는 유지하며, 형식이 깨진
+        메시지로 인해 _recv_loop이 죽지 않도록 방어한다.
+        """
         raw_objects = data.get("objects", [])
-        self._objects = [
-            DetectedObject(
-                label=obj["label"],
-                center_pixel=obj["center_pixel"],
-                confidence=obj["confidence"],
-                status=obj.get("status", "tracked"),
-            )
-            for obj in raw_objects
-            if "label" in obj and "center_pixel" in obj
-        ]
+        if not isinstance(raw_objects, list):
+            log.warning("vision_update.objects 필드가 list가 아님: %r", raw_objects)
+            self._objects = []
+            return
+
+        parsed: list[DetectedObject] = []
+        for obj in raw_objects:
+            if not isinstance(obj, dict):
+                log.warning("vision 객체 항목이 dict가 아님: %r", obj)
+                continue
+            try:
+                label = obj["label"]
+                cp = obj["center_pixel"]
+                confidence = obj["confidence"]
+            except KeyError as exc:
+                log.warning("vision 객체 필수 필드 누락(%s): %r", exc, obj)
+                continue
+            if not isinstance(cp, (list, tuple)) or len(cp) != 2:
+                log.warning("center_pixel 형식 오류 무시: %r", obj)
+                continue
+            try:
+                parsed.append(DetectedObject(
+                    label=str(label),
+                    center_pixel=[int(cp[0]), int(cp[1])],
+                    confidence=float(confidence),
+                    status=str(obj.get("status", "tracked")),
+                ))
+            except (TypeError, ValueError) as exc:
+                log.warning("vision 객체 타입 변환 실패(%s): %r", exc, obj)
+
+        self._objects = parsed
         log.debug("vision 업데이트: %d개 객체", len(self._objects))
 
     def get_objects(self) -> list[DetectedObject]:
@@ -61,6 +86,9 @@ class VisionState:
 
         parts = []
         for obj in self._objects:
-            cx, cy = obj.center_pixel
-            parts.append(f"{obj.label}(위치=[{cx},{cy}], 신뢰도 {obj.confidence:.2f})")
+            if len(obj.center_pixel) >= 2:
+                cx, cy = obj.center_pixel[0], obj.center_pixel[1]
+                parts.append(f"{obj.label}(위치=[{cx},{cy}], 신뢰도 {obj.confidence:.2f})")
+            else:
+                parts.append(f"{obj.label}(신뢰도 {obj.confidence:.2f})")
         return "현재 카메라: " + ", ".join(parts)

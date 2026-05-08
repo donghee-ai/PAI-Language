@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from datetime import datetime, timezone
+
+import openai
 
 from shared.constants import (
     SENDER_LANGUAGE,
@@ -72,14 +73,23 @@ class LanguageApp:
 
         try:
             raw_response = await self.llm.chat(SYSTEM_PROMPT, user_prompt)
-        except Exception as exc:
-            print(f"[오류] LLM 호출 실패: {exc}")
+        except openai.AuthenticationError:
+            print("[오류] OpenAI API 키가 유효하지 않습니다. .env 파일을 확인하세요.")
+            return
+        except openai.RateLimitError:
+            print("[오류] OpenAI API 요청 한도 초과. 잠시 후 다시 시도하세요.")
+            return
+        except openai.APIConnectionError:
+            print("[오류] OpenAI API 서버에 연결할 수 없습니다. 네트워크를 확인하세요.")
+            return
+        except openai.APIError as exc:
+            print(f"[오류] OpenAI API 오류: {exc}")
             return
 
-        # 대상 객체가 카메라에 보이는지 확인
-        vision_confirmed = len(self.vision.get_objects()) > 0
+        command = parse_llm_response(raw_response, user_text)
 
-        command = parse_llm_response(raw_response, user_text, vision_confirmed)
+        # 대상 객체가 카메라에 실제로 보이는지 확인
+        command.vision_confirmed = self.vision.has_label(command.target)
 
         # envelope 구성 후 전송
         envelope = {
@@ -89,7 +99,14 @@ class LanguageApp:
             "data": command.model_dump(),
         }
 
-        await self.hub.send(envelope)
+        try:
+            await self.hub.send(envelope)
+        except (asyncio.TimeoutError, TimeoutError):
+            print("[오류] Action Hub에 연결되어 있지 않아 명령 전송에 실패했습니다.")
+            return
+        except Exception as exc:
+            print(f"[오류] 명령 전송 중 오류: {exc}")
+            return
 
         print(f"[명령 전송] action={command.action.value}, "
               f"target={command.target}, destination={command.destination}")

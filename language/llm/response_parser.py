@@ -11,10 +11,11 @@ from shared.schemas.command import ActionType, RobotCommand
 log = logging.getLogger(__name__)
 
 
-def parse_llm_response(raw: str, raw_input: str, vision_confirmed: bool) -> RobotCommand:
+def parse_llm_response(raw: str, raw_input: str) -> RobotCommand:
     """LLM의 JSON 응답을 RobotCommand로 파싱한다.
 
     파싱 실패 시 안전한 stop 명령을 반환한다.
+    vision_confirmed는 호출측에서 파싱 후 별도로 설정해야 한다.
     """
     try:
         # LLM이 ```json ... ``` 으로 감쌀 수 있으므로 추출
@@ -22,12 +23,11 @@ def parse_llm_response(raw: str, raw_input: str, vision_confirmed: bool) -> Robo
         data = json.loads(cleaned)
 
         return RobotCommand(
-            action=data["action"],
+            action=ActionType(data["action"]),
             target=data.get("target", "none"),
             destination=data.get("destination", "none"),
             reasoning=data.get("reasoning", ""),
             raw_input=raw_input,
-            vision_confirmed=vision_confirmed,
         )
     except (json.JSONDecodeError, KeyError, ValueError) as exc:
         log.warning("LLM 응답 파싱 실패 (%s), stop 명령으로 대체: %s", exc, raw[:300])
@@ -37,7 +37,6 @@ def parse_llm_response(raw: str, raw_input: str, vision_confirmed: bool) -> Robo
             destination="none",
             reasoning=f"LLM 응답 파싱 실패: {exc}",
             raw_input=raw_input,
-            vision_confirmed=False,
         )
 
 
