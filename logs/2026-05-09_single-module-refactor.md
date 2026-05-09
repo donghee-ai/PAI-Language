@@ -64,4 +64,5 @@ PAI_Language 루트에서:
 - Coordinator 스펙 확정 시 `shared/` → Coordinator 패키지로 추출
 - WebSocket 듀얼 클라이언트화 (Vision + Coordinator 또는 Coordinator 단일 채널)
 - envelope 모델 재도입 (Coordinator wire 스펙 기반)
-- `PAI_Language` ↔ `PAI-Vision` 폴더명 컨벤션 통일
+- LLM에서 물체에 대한 질문을 받을 수 있게 하기
+- 로봇 행동 명령 따로, 질문 따로 가능하게 구성하기
