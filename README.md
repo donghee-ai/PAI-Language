@@ -73,6 +73,20 @@ PAI_LE Language 모듈
 종료합니다.
 ```
 
+## 테스트
+
+프로젝트 루트(`PAI_Language/`)에서 pytest 실행:
+
+```bash
+pytest tests --ignore=tests/test_llm.py
+```
+
+`tests/test_llm.py`는 OpenAI API + 사용자 입력이 필요한 대화형 E2E라 별도 실행:
+
+```bash
+python -m tests.test_llm
+```
+
 ## 프로젝트 구조
 
 ```
@@ -81,8 +95,7 @@ PAI_LE/
 │   ├── constants.py
 │   └── schemas/
 │       ├── command.py        # robot_command 스키마
-│       ├── vision.py         # vision_update 스키마
-│       └── ws_message.py     # WS 공통 envelope
+│       └── vision.py         # vision_update 스키마
 │
 ├── language/                 # 자연어 처리 파트
 │   ├── main.py               # 진입점
@@ -99,12 +112,18 @@ PAI_LE/
 │       ├── client.py         # WebSocket 연결 관리
 │       └── dispatcher.py     # 수신 메시지 라우팅
 │
-├── vision/                   # YOLO 감지 파트
-├── action/                   # SO-ARM 제어 + WS Hub
+├── tests/                    # 단위 / E2E 테스트 (pytest)
+│   ├── test_response_parser.py # LLM 응답 파싱 + STOP fallback
+│   ├── test_vision_state.py    # Pydantic 검증 + dict fallback, 라벨 조회
+│   ├── test_prompt_builder.py  # SYSTEM_PROMPT 회귀, user_prompt 포매팅
+│   ├── test_dispatcher.py      # type별 라우팅 (asyncio)
+│   └── test_llm.py             # LLM 파이프라인 대화형 E2E
 │
 ├── docs/
 │   ├── architecture.md       # 전체 시스템 아키텍처
 │   └── command_schema.md     # Language ↔ Action 메시지 스키마
+│
+├── logs/                     # 작업 로그 (날짜별 마크다운)
 │
 ├── .env.example
 ├── requirements.txt

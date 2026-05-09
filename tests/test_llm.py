@@ -1,6 +1,6 @@
 """LLM 파이프라인 단독 테스트 — WS 연결 없이 자연어 → 구조화 명령 확인.
 
-실행: python -m language.test_llm
+실행: python -m tests.test_llm
 """
 
 from __future__ import annotations

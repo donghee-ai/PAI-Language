@@ -11,7 +11,6 @@ import websockets
 from websockets.asyncio.client import ClientConnection
 
 from language.config import Config
-from language.ws.adapters import normalize_envelope
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +79,6 @@ class HubClient:
             except json.JSONDecodeError:
                 log.warning("비정상 메시지 수신 (JSON 파싱 실패)")
                 continue
-            msg = normalize_envelope(msg)
             if self._on_message:
                 # fire-and-forget: 핸들러 처리가 다음 메시지 수신을 막지 않도록 한다.
                 task = asyncio.create_task(self._safe_dispatch(msg))

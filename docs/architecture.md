@@ -41,8 +41,7 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 **현 단계 핵심:**
 
 - PAI-Vision이 이미 WS 서버 (`@app.websocket("/ws/scenes")`)
-- Language는 envelope 없이 송출되는 raw scene을 수신 후 PAI_LE 측 어댑터에서
-  표준 envelope(`{type, timestamp, sender, data}`)으로 정규화
+- PAI-Vision이 표준 envelope(`{type, timestamp, sender, data}`) 형태로 송출 (PAI-Vision `app/main.py`의 `_build_scene_envelope`). PAI_LE 측 별도 어댑터 불필요.
 - `Config.action_hub_enabled = False` 기본값 → 명령은 stdout 출력만
 
 ### 2.2 목표 토폴로지 (Action Hub 도입 후)
@@ -71,6 +70,25 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 - Action이 수신한 `vision_update`를 Language에 relay (broadcast)
 - Language는 Vision 결과를 직접 받되, Action이 Vision과 명령을 최종 조합하여 실행
 
+### 2.3 차세대 토폴로지 (PAI-Coordinator 중앙 허브, 2026-05-09 합의)
+
+```
+PAI-Vision ──► PAI-Coordinator ◄── PAI-Language
+                     │
+                     ▼
+              PAI-Action / ROS2
+                     │
+                     ▼
+                 Real Robot
+```
+
+이전의 "Action이 허브를 겸한다" 안에서 **전용 Coordinator 모듈**로 분리하는 방향으로 합의됨. Coordinator가 WebSocket과 ROS2 양쪽을 모두 관리하는 단순 브로커 역할이고, Vision / Language / Action은 각자 모델 연산만 담당하는 **단일 모듈**로 단순화된다. 어차피 ROS2도 써야 하고 WebSocket은 이미 갖춰져 있으니, 중앙에 허브 하나 두고 두 통신을 모두 거기서 처리하자는 결론.
+
+이 변경에 따른 PAI-Language 측 영향:
+
+- `shared/`의 스키마·상수는 결국 Coordinator 모듈로 이전될 운명 (현재는 PAI_Language 내부에 임시 거주)
+- WebSocket 연결 방식 자체는 Coordinator 스펙 확정 시점에 한꺼번에 변경 예정 — 그 전까지는 현재 Vision 직결합 유지
+
 ---
 
 ## 3. 모노레포 디렉토리 구조
@@ -78,35 +96,31 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 ```
 PAI_LE/
 │
-├── shared/                         # 세 파트 공통 인터페이스 계약
+├── shared/                         # 공통 인터페이스 계약 (Coordinator 도입 시 이전 예정)
 │   ├── schemas/
 │   │   ├── vision.py               # YOLO 출력 Pydantic 모델
-│   │   ├── command.py              # Language→Action 명령 모델
-│   │   └── ws_message.py           # WS 메시지 envelope 모델
+│   │   └── command.py              # Language→Action 명령 모델
 │   └── constants.py                # WS URL, 토픽 이름, 레이블 상수
-│
-├── vision/                         # YOLO 감지 파트 (팀원 A)
-│   └── ...
 │
 ├── language/                       # 자연어 처리 파트 (담당자)
 │   ├── main.py                     # 진입점, 이벤트 루프 조율
 │   ├── config.py                   # 환경변수, OpenAI key, WS URL
 │   ├── ws/
-│   │   ├── client.py               # Action Hub WS 연결 및 재연결 관리
+│   │   ├── client.py               # WS 연결 및 재연결 관리
 │   │   └── dispatcher.py           # 수신 메시지 type별 핸들러 라우팅
 │   ├── input/
 │   │   └── cli_handler.py          # asyncio stdin → user_input 이벤트
 │   ├── context/
 │   │   └── vision_state.py         # 최신 YOLO 결과 보관, 관심 객체 필터링
-│   ├── llm/
-│   │   ├── openai_client.py        # OpenAI API 비동기 래퍼
-│   │   ├── prompt_builder.py       # user_input + vision_context → 프롬프트
-│   │   └── response_parser.py      # LLM 출력 → RobotCommand 구조체 파싱
-│   └── models/
-│       └── robot_command.py        # Language 내부 명령 표현 (shared 참조)
+│   └── llm/
+│       ├── openai_client.py        # OpenAI API 비동기 래퍼
+│       ├── prompt_builder.py       # user_input + vision_context → 프롬프트
+│       └── response_parser.py      # LLM 출력 → RobotCommand 구조체 파싱
 │
-├── action/                         # SO-ARM 제어 + WS Hub (팀원 B)
-│   └── ...
+├── tests/                          # E2E 테스트
+│   └── test_llm.py
+│
+├── logs/                           # 작업 로그 (날짜별 마크다운)
 │
 └── docs/
     ├── architecture.md             # 이 문서
@@ -147,11 +161,11 @@ PAI_LE/
 
 ### 현 단계 (Vision 직결합)
 
-| type            | 방향              | 설명                                                          |
-| --------------- | ----------------- | ------------------------------------------------------------- |
-| (envelope 없음) | Vision → Language | raw scene을 PAI_LE 어댑터에서 `vision_update`로 정규화         |
-| `robot_command` | (미전송)          | Action Hub 부재 — stdout 출력만                               |
-| `action_status` | (미수신)          | Action Hub 부재                                               |
+| type            | 방향              | 설명                                                       |
+| --------------- | ----------------- | ---------------------------------------------------------- |
+| `vision_update` | Vision → Language | PAI-Vision이 표준 envelope으로 직접 송출 (어댑터 불필요)   |
+| `robot_command` | (미전송)          | Action Hub 부재 — stdout 출력만                            |
+| `action_status` | (미수신)          | Action Hub 부재                                            |
 
 ### 목표 단계 (Action Hub 도입 후)
 
