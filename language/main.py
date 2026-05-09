@@ -102,14 +102,13 @@ class LanguageApp:
         # 대상 객체가 카메라에 실제로 보이는지 확인
         command.vision_confirmed = self.vision.has_label(command.target)
 
-        # envelope 구성 후 전송 — Action Hub가 활성화된 경우에만.
-        # 현재 직결합 단계(Vision 서버에 직접 붙음)에서는 송신 대상이 없으므로
-        # 파싱 결과를 stdout에만 출력한다.
-        if not self.config.action_hub_enabled:
+        # envelope 구성 후 전송 — Coordinator가 활성화된 경우에만.
+        # 현재 Vision 직결합 단계에서는 송신 대상이 없으므로 파싱 결과를 stdout에만 출력한다.
+        if not self.config.coordinator_enabled:
             print(f"[명령 파싱] action={command.action.value}, "
                   f"target={command.target}, destination={command.destination}")
             print(f"[근거] {command.reasoning}")
-            print("[명령 미전송 — Action Hub 없음]")
+            print("[명령 미전송 — 송신 대상 없음]")
             return
 
         envelope = {
@@ -122,7 +121,7 @@ class LanguageApp:
         try:
             await self.hub.send(envelope)
         except (asyncio.TimeoutError, TimeoutError):
-            print("[오류] Action Hub에 연결되어 있지 않아 명령 전송에 실패했습니다.")
+            print("[오류] Coordinator에 연결되어 있지 않아 명령 전송에 실패했습니다.")
             return
         except Exception as exc:
             print(f"[오류] 명령 전송 중 오류: {exc}")

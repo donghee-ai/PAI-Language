@@ -1,18 +1,18 @@
-# Language ↔ Action 명령 스키마 (초안 v0.1)
+# Language ↔ Coordinator 명령 스키마 (초안 v0.2)
 
-> **상태**: 초안 — Action팀 리뷰 및 합의 필요  
-> **작성일**: 2026-05-07  
-> **작성**: Language 파트  
-> **현 단계 (2026-05-08~)**: Action Hub 미구현 → Language는 PAI-Vision 서버에 직결합되어
-> `vision_update`만 수신한다. 본 문서의 `robot_command` / `action_status` 메시지는
-> **wire로 전송되지 않으며**, 사용자 입력 → LLM 파싱 결과는 stdout으로만 출력된다.
-> Action Hub가 도입되면 `ACTION_HUB_ENABLED=1` 설정으로 활성화된다.
+> **상태**: 초안 — Action팀 / Coordinator팀 리뷰 및 합의 필요
+> **작성일**: 2026-05-07 (v0.1) / 2026-05-09 갱신 (v0.2)
+> **작성**: Language 파트
+> **현 단계 (Phase 1, 2026-05-08~)**: Coordinator 미구현 → Language는 PAI-Vision 서버에
+> 직결합되어 `vision_update`만 수신한다. 본 문서의 `robot_command` / `action_status`
+> 메시지는 **wire로 전송되지 않으며**, 사용자 입력 → LLM 파싱 결과는 stdout으로만 출력된다.
+> Phase 2 (Coordinator 도입) 시 `COORDINATOR_ENABLED=1` 설정으로 활성화된다.
 
 ---
 
 ## 1. 개요
 
-Language 파트가 OpenAI API를 통해 파싱한 명령을 Action Hub(WebSocket 서버)로 전달하는 메시지 형식을 정의한다.  
+Language 파트가 OpenAI API를 통해 파싱한 명령을 Coordinator(중앙 WebSocket/ROS2 브로커)로 전달하는 메시지 형식을 정의한다.  
 모든 WebSocket 메시지는 **공통 Envelope**으로 감싸며, `data` 필드에 타입별 페이로드를 담는다.
 
 ---
@@ -39,16 +39,18 @@ Language 파트가 OpenAI API를 통해 파싱한 명령을 Action Hub(WebSocket
 
 | `type` 값 | 방향 | 설명 |
 |-----------|------|------|
-| `vision_update` | Vision → Action Hub | YOLO 프레임 결과 |
-| `vision_update` | Action Hub → Language | relay |
-| `robot_command` | Language → Action Hub | 파싱된 로봇 명령 |
-| `action_status` | Action Hub → Language | 실행 상태 피드백 |
+| `vision_update` | Vision → Coordinator | YOLO 프레임 결과 |
+| `vision_update` | Coordinator → Language | relay |
+| `robot_command` | Language → Coordinator | 파싱된 로봇 명령 |
+| `robot_command` | Coordinator → Action | relay |
+| `action_status` | Action → Coordinator | 실행 상태 |
+| `action_status` | Coordinator → Language | relay |
 
 ---
 
 ## 3. robot_command 스키마
 
-Language가 Action Hub로 전송하는 핵심 메시지.
+Language가 Coordinator로 전송하는 핵심 메시지.
 
 ### Envelope 예시
 
@@ -103,7 +105,7 @@ Language가 Action Hub로 전송하는 핵심 메시지.
 
 ## 4. action_status 스키마
 
-Action Hub가 Language에 전송하는 실행 상태 피드백.
+Action이 발행하고 Coordinator가 Language로 relay하는 실행 상태 피드백.
 
 ### Envelope 예시
 
@@ -141,7 +143,7 @@ Action Hub가 Language에 전송하는 실행 상태 피드백.
 
 ## 5. vision_update 스키마 (참고용)
 
-Vision 파트가 발행하고 Action Hub가 Language에 relay하는 메시지.  
+Vision 파트가 발행하고 Coordinator가 Language로 relay하는 메시지.  
 Language는 이 메시지에서 `objects` 배열의 최소 필드만 추출하여 OpenAI context에 사용.
 
 ### 전체 구조 (Vision 팀 원본)
@@ -258,20 +260,22 @@ User: "아무거나 해봐"
 
 ---
 
-## 7. 합의 필요 사항 (Action팀 확인 요청)
+## 7. 합의 필요 사항 (Action / Coordinator 팀 확인 요청)
 
 | 항목 | 현재 초안 | 확인 필요 내용 |
 |------|-----------|----------------|
-| `target` / `destination` 값 | YOLO label 문자열 그대로 | Action팀이 label 기반 객체 탐색 가능한지 |
+| `target` / `destination` 값 | YOLO label 문자열 그대로 | Action 팀이 label 기반 객체 탐색 가능한지 |
 | `pick_and_place` 지원 여부 | 복합 동작으로 제안 | Action에서 단일 명령으로 처리 가능한지, 아니면 `pick` + `place` 분리 전송해야 하는지 |
 | `vision_confirmed=false` 처리 | Language가 그대로 전송 | Action이 자체적으로 Vision 재탐색할지, 아니면 Language에서 차단할지 |
-| WS 서버 포트 / URL | 미정 | `shared/constants.py`에 반영 필요 |
-| Envelope wire 적용 위치 | 현재: PAI_LE 측 어댑터로 흡수 | Vision 측에서 envelope을 씌워 보내는 것으로 통일할지(팀원 A PR), 아니면 모든 소비자가 어댑터로 처리할지 |
+| Coordinator WS URL / 포트 | 미정 | Coordinator 스펙 확정 시 `shared/constants.py`에 반영 (Phase 2에서 Coordinator 레포로 이전 예정) |
+| Envelope wire 표준 | PAI-Vision이 이미 표준 envelope 송출 | Coordinator가 그대로 통과시킬지, 추가 메타데이터를 부착할지 |
+| `shared/` 이전 시점 | Phase 1 동안은 PAI_Language에 임시 거주 | Coordinator 레포가 생기는 시점에 일괄 이전 |
 
 ---
 
 ## 8. 변경 이력
 
-| 버전 | 날짜 | 내용 |
-|------|------|------|
-| v0.1 | 2026-05-07 | 초안 작성 |
+| 버전 | 날짜       | 내용                                                       |
+| ---- | ---------- | ---------------------------------------------------------- |
+| v0.1 | 2026-05-07 | 초안 작성                                                  |
+| v0.2 | 2026-05-09 | Action Hub 안 폐기, PAI-Coordinator 중앙 허브 구조로 갱신  |

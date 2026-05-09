@@ -1,4 +1,4 @@
-"""YOLO 감지 결과 Pydantic 모델 — Vision → Action Hub → Language."""
+"""YOLO 감지 결과 Pydantic 모델 — Vision → Coordinator → Language."""
 
 from __future__ import annotations
 

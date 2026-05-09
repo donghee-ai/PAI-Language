@@ -1,4 +1,8 @@
-"""Action Hub WebSocket 클라이언트 — 연결, 재연결, 송수신 관리."""
+"""WebSocket 클라이언트 — 연결, 재연결, 송수신 관리.
+
+현재(Phase 1, Vision 직결합)는 PAI-Vision의 `/ws/scenes`에 직접 접속한다.
+Phase 2(Coordinator 도입) 시 동일 클라이언트가 Coordinator에 접속하도록 URL만 전환된다.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,7 @@ log = logging.getLogger(__name__)
 
 
 class HubClient:
-    """Action Hub에 대한 WebSocket 클라이언트."""
+    """WebSocket Hub 클라이언트 (Phase 1: Vision, Phase 2: Coordinator)."""
 
     def __init__(self, config: Config) -> None:
         self._config = config

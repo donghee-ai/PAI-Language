@@ -1,4 +1,4 @@
-"""Language → Action Hub robot_command 스키마."""
+"""Language → Coordinator robot_command 스키마."""
 
 from __future__ import annotations
 
