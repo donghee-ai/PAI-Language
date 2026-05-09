@@ -1,4 +1,4 @@
-# PAI_Language
+# PAI-Language
 
 LeRobot SO-ARM 기반 로봇 팔이 사용자 자연어 명령을 따라 물체를 조작하는 PAI(Physical AI) 시스템의 **Language 파트**.
 사용자의 자연어 입력을 받아 Vision의 실시간 장면 정보와 결합하여 OpenAI API로 구조화된 `robot_command`로 변환한다.
@@ -59,7 +59,7 @@ Python 3.10+ 필요.
 
 ### 2. 환경변수 설정 (`.env`)
 
-프로젝트 루트(`PAI_Language/`)에 `.env` 파일을 생성한다:
+프로젝트 루트(`PAI-Language/`)에 `.env` 파일을 생성한다:
 
 ```env
 OPENAI_API_KEY=sk-...                              # 필수
@@ -73,7 +73,7 @@ VISION_WS_URL=ws://localhost:8000/ws/scenes        # 선택, PAI-Vision의 /ws/s
 
 ### 3. 실행
 
-반드시 **프로젝트 루트**(`PAI_Language/`)에서 실행해야 한다 — `shared/` 패키지 인식을 위해.
+반드시 **프로젝트 루트**(`PAI-Language/`)에서 실행해야 한다 — `shared/` 패키지 인식을 위해.
 
 ```bash
 python -m language.main
@@ -83,7 +83,7 @@ python -m language.main
 
 ```text
 ==================================================
-PAI_LE Language 모듈
+PAI-Language 모듈
   WS: ws://localhost:8000/ws/scenes
   LLM: gpt-4o-mini
   종료: quit / exit / Ctrl+C
@@ -104,7 +104,7 @@ PAI_LE Language 모듈
 ## 프로젝트 구조
 
 ```text
-PAI_Language/
+PAI-Language/
 ├── shared/                       # 세 파트 공통 인터페이스 (Phase 2에서 Coordinator로 이전 예정)
 │   ├── constants.py              # WS URL, 토픽 이름, 라벨 상수
 │   └── schemas/
@@ -206,7 +206,7 @@ PAI_Language/
 
 ## 테스트
 
-프로젝트 루트(`PAI_Language/`)에서 pytest 실행:
+프로젝트 루트(`PAI-Language/`)에서 pytest 실행:
 
 ```bash
 pytest tests --ignore=tests/test_llm.py

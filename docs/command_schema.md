@@ -269,7 +269,7 @@ User: "아무거나 해봐"
 | `vision_confirmed=false` 처리 | Language가 그대로 전송 | Action이 자체적으로 Vision 재탐색할지, 아니면 Language에서 차단할지 |
 | Coordinator WS URL / 포트 | 미정 | Coordinator 스펙 확정 시 `shared/constants.py`에 반영 (Phase 2에서 Coordinator 레포로 이전 예정) |
 | Envelope wire 표준 | PAI-Vision이 이미 표준 envelope 송출 | Coordinator가 그대로 통과시킬지, 추가 메타데이터를 부착할지 |
-| `shared/` 이전 시점 | Phase 1 동안은 PAI_Language에 임시 거주 | Coordinator 레포가 생기는 시점에 일괄 이전 |
+| `shared/` 이전 시점 | Phase 1 동안은 PAI-Language에 임시 거주 | Coordinator 레포가 생기는 시점에 일괄 이전 |
 
 ---
 

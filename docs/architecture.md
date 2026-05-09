@@ -1,4 +1,4 @@
-# PAI_LE 시스템 아키텍처
+# PAI-Language 시스템 아키텍처
 
 ## 1. 프로젝트 개요
 
@@ -22,7 +22,7 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│                     PAI_LE (Phase 1: 직결합)                  │
+│                  PAI-Language (Phase 1: 직결합)               │
 │                                                              │
 │   [User]                                                     │
 │     │ stdin (자연어)                                         │
@@ -39,7 +39,7 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 **Phase 1 핵심:**
 
 - PAI-Vision이 이미 WS 서버 (`@app.websocket("/ws/scenes")`)
-- PAI-Vision이 표준 envelope(`{type, timestamp, sender, data}`) 형태로 송출 (PAI-Vision `app/main.py`의 `_build_scene_envelope`). PAI_LE 측 별도 어댑터 불필요.
+- PAI-Vision이 표준 envelope(`{type, timestamp, sender, data}`) 형태로 송출 (PAI-Vision `app/main.py`의 `_build_scene_envelope`). PAI-Language 측 별도 어댑터 불필요.
 - `Config.coordinator_enabled = False` 기본값 → 명령은 stdout 출력만
 - 본 단계는 Coordinator 스펙이 확정될 때까지의 임시 구조이며, Phase 2 도입 시 일괄 전환된다.
 
@@ -67,7 +67,7 @@ PAI-Vision ──► PAI-Coordinator ◄── PAI-Language
 
 이 변경에 따른 PAI-Language 측 영향:
 
-- `shared/`의 스키마·상수는 결국 Coordinator 모듈로 이전될 운명 (현재는 PAI_Language 내부에 임시 거주)
+- `shared/`의 스키마·상수는 결국 Coordinator 모듈로 이전될 운명 (현재는 PAI-Language 내부에 임시 거주)
 - WebSocket 연결 방식 자체는 Coordinator 스펙 확정 시점에 한꺼번에 변경 예정 — 그 전까지는 Phase 1(Vision 직결합) 유지
 
 ---
@@ -75,7 +75,7 @@ PAI-Vision ──► PAI-Coordinator ◄── PAI-Language
 ## 3. 모노레포 디렉토리 구조
 
 ```text
-PAI_LE/
+PAI-Language/
 │
 ├── shared/                         # 공통 인터페이스 계약 (Phase 2에서 Coordinator로 이전 예정)
 │   ├── schemas/

@@ -138,7 +138,7 @@ class LanguageApp:
         self.config.validate()
 
         print("=" * 50)
-        print("PAI_LE Language 모듈")
+        print("PAI-Language 모듈")
         print(f"  WS: {self.config.ws_url}")
         print(f"  LLM: {self.config.openai_model}")
         print("  종료: quit / exit / Ctrl+C")
