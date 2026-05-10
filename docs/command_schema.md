@@ -1,12 +1,14 @@
-# Language ↔ Coordinator 명령 스키마 (초안 v0.2)
+# Language ↔ Coordinator 명령 스키마 (초안 v0.3)
 
 > **상태**: 초안 — Action팀 / Coordinator팀 리뷰 및 합의 필요
-> **작성일**: 2026-05-07 (v0.1) / 2026-05-09 갱신 (v0.2)
+> **작성일**: 2026-05-07 (v0.1) / 2026-05-09 갱신 (v0.2) / 2026-05-11 갱신 (v0.3)
 > **작성**: Language 파트
 > **현 단계 (Phase 1, 2026-05-08~)**: Coordinator 미구현 → Language는 PAI-Vision 서버에
 > 직결합되어 `vision_update`만 수신한다. 본 문서의 `robot_command` / `action_status`
-> 메시지는 **wire로 전송되지 않으며**, 사용자 입력 → LLM 파싱 결과는 stdout으로만 출력된다.
-> Phase 2 (Coordinator 도입) 시 `COORDINATOR_ENABLED=1` 설정으로 활성화된다.
+> 메시지는 **wire로 전송되지 않으며**, LLM이 생성한 자연어 답변과 (있으면) 명령 파싱
+> 결과를 stdout으로 출력한다. Phase 2 (Coordinator 도입) 시 `COORDINATOR_ENABLED=1`
+> 설정으로 `robot_command` 송신·`action_status` 수신이 활성화된다.
+> 자연어 답변(`answer`)을 wire에 둘지(`assistant_answer` 등 신규 타입)는 미결 — 7장 참조.
 
 ---
 
@@ -270,6 +272,7 @@ User: "아무거나 해봐"
 | Coordinator WS URL / 포트 | 미정 | Coordinator 스펙 확정 시 `shared/constants.py`에 반영 (Phase 2에서 Coordinator 레포로 이전 예정) |
 | Envelope wire 표준 | PAI-Vision이 이미 표준 envelope 송출 | Coordinator가 그대로 통과시킬지, 추가 메타데이터를 부착할지 |
 | `shared/` 이전 시점 | Phase 1 동안은 PAI-Language에 임시 거주 | Coordinator 레포가 생기는 시점에 일괄 이전 |
+| LLM 답변(`answer`)의 wire화 | Phase 1 stdout 전용 | Phase 2에서 `assistant_answer` 같은 신규 타입을 둘지, 답변은 Language 로컬 출력에만 머물게 둘지 결정 필요 |
 
 ---
 
@@ -279,3 +282,4 @@ User: "아무거나 해봐"
 | ---- | ---------- | ---------------------------------------------------------- |
 | v0.1 | 2026-05-07 | 초안 작성                                                  |
 | v0.2 | 2026-05-09 | Action Hub 안 폐기, PAI-Coordinator 중앙 허브 구조로 갱신  |
+| v0.3 | 2026-05-11 | LLM 응답이 `LLMResponse(answer + Optional command)`로 확장됨에 따라 Phase 1 동작 설명 갱신, `answer` wire화 미결사항 추가 |

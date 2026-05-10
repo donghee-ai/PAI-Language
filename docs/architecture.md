@@ -30,7 +30,8 @@ LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 
 │  [Language] ──────── WS (vision_update 수신만) ─────► [Vision = WS 서버] │
 │     │                                                        │
 │     ▼ stdout                                                 │
-│  [명령 파싱 결과 출력]   ※ robot_command 미전송              │
+│  [답변 + (명령 있으면) 명령 파싱 결과 출력]                  │
+│   ※ robot_command 미전송                                     │
 │                                                              │
 │   ※ Coordinator 미도입 — robot_command/action_status 비활성  │
 └──────────────────────────────────────────────────────────────┘
@@ -80,7 +81,8 @@ PAI-Language/
 ├── shared/                         # 공통 인터페이스 계약 (Phase 2에서 Coordinator로 이전 예정)
 │   ├── schemas/
 │   │   ├── vision.py               # YOLO 출력 Pydantic 모델
-│   │   └── command.py              # Language→Coordinator 명령 모델
+│   │   ├── command.py              # Language→Coordinator 명령 모델
+│   │   └── llm_response.py         # LLM 응답 wrapper (answer 필수 + command Optional)
 │   └── constants.py                # WS URL, 토픽 이름, 레이블 상수
 │
 ├── language/                       # 자연어 처리 파트 (담당자)
@@ -96,13 +98,14 @@ PAI-Language/
 │   └── llm/
 │       ├── openai_client.py        # OpenAI API 비동기 래퍼
 │       ├── prompt_builder.py       # user_input + vision_context → 프롬프트
-│       └── response_parser.py      # LLM 출력 → RobotCommand 구조체 파싱
+│       └── response_parser.py      # LLM 출력 → LLMResponse(answer + Optional command) 파싱
 │
 ├── tests/                          # 단위 / E2E 테스트
 │   ├── test_response_parser.py
 │   ├── test_vision_state.py
 │   ├── test_prompt_builder.py
 │   ├── test_dispatcher.py
+│   ├── test_llm_response_schema.py # LLMResponse / AssistantAnswer Pydantic 모델 검증
 │   └── test_llm.py
 │
 ├── logs/                           # 작업 로그 (날짜별 마크다운)
@@ -126,12 +129,12 @@ PAI-Language/
 
 ### Language (담당 파트)
 
-- CLI(stdin)로 사용자 자연어 명령 수신
+- CLI(stdin)로 사용자 자연어 입력 수신 (일상 대화 / 카메라 질문 / 로봇 명령 / 복합)
 - `vision_update`에서 최소 context 추출 (label, center_pixel)
 - `prompt_builder`가 "사용자 입력 + 현재 감지 객체"를 합쳐 OpenAI에 전달
-- LLM 출력을 파싱해 `robot_command` 메시지를 생성
-- Phase 1: stdout 출력만
-- Phase 2: Coordinator로 `robot_command` 송신, Coordinator가 relay한 `action_status`를 사용자에게 출력
+- LLM 출력을 `LLMResponse`로 파싱 — 자연어 답변(`answer`)은 항상 생성, 로봇 명령(`command`)은 사용자 입력에 명령 의도가 있을 때만 추출
+- Phase 1: 답변과 (있으면) 명령 파싱 결과를 stdout 출력. `robot_command`는 wire로 미전송
+- Phase 2: 답변은 계속 stdout, `command`만 Coordinator로 송신. Coordinator가 relay한 `action_status`는 사용자에게 출력
 
 ### Action
 
@@ -197,13 +200,19 @@ PAI-Language/
   │
   ▼
 [response_parser.py]
-  LLM JSON 출력 → RobotCommand 구조체 + 유효성 검증
+  LLM JSON 출력 → LLMResponse(answer 필수 + Optional command) + 유효성 검증
   │
-  ▼
+  ├─► [답변] answer.text 항상 stdout 출력
+  │
+  ▼ command is not None?
+  ├─ None  → 종료 (순수 대화/질문)
+  └─ 있음
+     │
+     ▼
 ┌────────── coordinator_enabled? ──────────┐
 ▼                                          ▼
 Phase 1 (False)                     Phase 2 (True)
-stdout 출력만                       [ws/client.py] ───► Coordinator (robot_command 송신)
+[명령 파싱] stdout 출력만           [ws/client.py] ───► Coordinator (robot_command 송신)
                                                          │
                                                          ▼
                                     [dispatcher.py] ◄─── Coordinator (action_status 수신)
@@ -252,3 +261,4 @@ stdout 출력만                       [ws/client.py] ───► Coordinator (
 | YOLO target label 목록 확정   | Vision팀과 합의 필요                     | ball, basket 등                                         |
 | OpenAI 모델 선택              | 추후 결정                                | 초안: gpt-4o-mini                                       |
 | `shared/` → Coordinator 이전  | Phase 2 도입 시                          | 스키마·상수의 단일 출처를 Coordinator 레포로 이동       |
+| LLM 답변(`answer`)의 wire화   | 미정 — 현재 stdout 전용                  | Phase 2에서 `assistant_answer` 같은 신규 메시지 타입을 둘지, 답변은 Language 로컬 출력에만 머물게 둘지 결정 필요 |

@@ -55,10 +55,16 @@ async def main() -> None:
 
             print(f"\n[LLM 원본 응답]\n{raw}")
 
-            cmd = parse_llm_response(raw, user_text)
+            response = parse_llm_response(raw, user_text)
 
-            print(f"\n[파싱 결과]")
-            print(json.dumps(cmd.model_dump(), indent=2, ensure_ascii=False))
+            print(f"\n[답변] {response.answer.text}")
+            if response.reasoning:
+                print(f"[근거] {response.reasoning}")
+            if response.command is not None:
+                print("\n[명령 파싱 결과]")
+                print(json.dumps(response.command.model_dump(), indent=2, ensure_ascii=False))
+            else:
+                print("\n[명령 없음 — 일반 대화/질문]")
 
         except (EOFError, KeyboardInterrupt):
             break

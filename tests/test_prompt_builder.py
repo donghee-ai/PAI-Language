@@ -1,6 +1,7 @@
 """language.llm.prompt_builder 단위 테스트.
 
-회귀 보호 — SYSTEM_PROMPT 핵심 규칙과 build_user_prompt 포매팅 안정성.
+회귀 보호 — SYSTEM_PROMPT 핵심 규칙(LLM wrapper 형식 + 분류 가이드 + 명령/답변
+규칙)과 build_user_prompt 포매팅 안정성.
 """
 
 from __future__ import annotations
@@ -20,13 +21,37 @@ def test_system_prompt_lists_all_action_types() -> None:
 def test_system_prompt_specifies_json_only_output() -> None:
     """LLM이 JSON 외 텍스트를 내지 않도록 명시되어야 함."""
     assert "JSON" in SYSTEM_PROMPT
-    assert "JSON 외의 텍스트는 출력하지 마세요" in SYSTEM_PROMPT
+    assert "JSON 외의 텍스트는 절대 출력하지 마세요" in SYSTEM_PROMPT
 
 
 def test_system_prompt_has_safety_fallback_rule() -> None:
-    """모호/위험 명령은 stop으로 회귀하라는 규칙이 있어야 함."""
+    """모호/위험한 명령은 command=null로 두고 다시 묻는 규칙."""
     assert "stop" in SYSTEM_PROMPT
-    assert "모호하거나 위험" in SYSTEM_PROMPT
+    assert "모호" in SYSTEM_PROMPT
+
+
+def test_system_prompt_describes_answer_and_command_fields() -> None:
+    """wrapper의 두 필드 — answer, command — 가 모두 명시되어야 함."""
+    assert '"answer"' in SYSTEM_PROMPT
+    assert '"command"' in SYSTEM_PROMPT
+
+
+def test_system_prompt_describes_classification_scenarios() -> None:
+    """일상 대화 / 카메라 질문 / 로봇 명령 / 복합 — 4가지 시나리오 가이드 등장."""
+    assert "일상 대화" in SYSTEM_PROMPT
+    assert "질문" in SYSTEM_PROMPT
+    assert "로봇 명령" in SYSTEM_PROMPT
+    assert "복합" in SYSTEM_PROMPT
+
+
+def test_system_prompt_forbids_empty_answer_text() -> None:
+    """answer.text는 빈 문자열이 될 수 없다는 규칙이 명시되어야 함."""
+    assert "빈 문자열" in SYSTEM_PROMPT
+
+
+def test_system_prompt_allows_command_null() -> None:
+    """일상 대화/단순 질문에서는 command=null이 가능함이 명시되어야 함."""
+    assert "null" in SYSTEM_PROMPT
 
 
 # --- build_user_prompt -------------------------------------------------------

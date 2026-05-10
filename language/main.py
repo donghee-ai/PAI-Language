@@ -97,9 +97,19 @@ class LanguageApp:
             print(f"[오류] OpenAI API 오류: {exc}")
             return
 
-        command = parse_llm_response(raw_response, user_text)
+        response = parse_llm_response(raw_response, user_text)
 
-        # 대상 객체가 카메라에 실제로 보이는지 확인
+        # 1. 일반 LLM 대화처럼 답변은 항상 출력
+        print(f"[답변] {response.answer.text}")
+        if response.reasoning:
+            print(f"[근거] {response.reasoning}")
+
+        # 2. 명령 의도가 없으면 종료 (순수 대화/질문)
+        if response.command is None:
+            return
+
+        # 3. 명령이 있으면 처리
+        command = response.command
         command.vision_confirmed = self.vision.has_label(command.target)
 
         # envelope 구성 후 전송 — Coordinator가 활성화된 경우에만.
