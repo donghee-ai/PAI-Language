@@ -17,8 +17,8 @@ from language.llm.response_parser import parse_llm_response
 # 테스트용 더미 vision 데이터
 DUMMY_VISION = {
     "objects": [
-        {"label": "ball", "center_pixel": [640, 360], "confidence": 0.91, "status": "tracked"},
-        {"label": "basket", "center_pixel": [900, 400], "confidence": 0.87, "status": "tracked"},
+        {"label": "sports ball", "center_pixel": [640, 360], "confidence": 0.91, "status": "tracked"},
+        {"label": "bowl", "center_pixel": [900, 400], "confidence": 0.87, "status": "tracked"},
     ]
 }
 

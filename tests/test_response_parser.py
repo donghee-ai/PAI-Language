@@ -19,7 +19,7 @@ def test_parse_pick_command() -> None:
     raw = json.dumps(
         {
             "answer": {"text": "네, 공을 잡을게요."},
-            "command": {"action": "pick", "target": "ball", "reasoning": "공 집기"},
+            "command": {"action": "pick", "target": "sports ball", "reasoning": "공 집기"},
             "reasoning": "명령 의도 확인",
         }
     )
@@ -27,7 +27,7 @@ def test_parse_pick_command() -> None:
     assert resp.answer.text == "네, 공을 잡을게요."
     assert resp.command is not None
     assert resp.command.action == ActionType.PICK
-    assert resp.command.target == "ball"
+    assert resp.command.target == "sports ball"
     assert resp.command.destination == "none"
     assert resp.command.reasoning == "공 집기"
     assert resp.command.raw_input == "공 잡아줘"
@@ -37,21 +37,21 @@ def test_parse_pick_command() -> None:
 def test_parse_pick_and_place_full_fields() -> None:
     raw = json.dumps(
         {
-            "answer": {"text": "공을 바구니에 넣어드릴게요."},
+            "answer": {"text": "공을 그릇에 넣어드릴게요."},
             "command": {
                 "action": "pick_and_place",
-                "target": "ball",
-                "destination": "basket",
-                "reasoning": "공을 바구니에",
+                "target": "sports ball",
+                "destination": "bowl",
+                "reasoning": "공을 그릇에",
             },
             "reasoning": "복합 의도",
         }
     )
-    resp = parse_llm_response(raw, "공 바구니에 넣어")
+    resp = parse_llm_response(raw, "공 그릇에 넣어")
     assert resp.command is not None
     assert resp.command.action == ActionType.PICK_AND_PLACE
-    assert resp.command.target == "ball"
-    assert resp.command.destination == "basket"
+    assert resp.command.target == "sports ball"
+    assert resp.command.destination == "bowl"
 
 
 def test_parse_home_normalizes_target_destination_to_none() -> None:
@@ -61,8 +61,8 @@ def test_parse_home_normalizes_target_destination_to_none() -> None:
             "answer": {"text": "원위치로 이동합니다."},
             "command": {
                 "action": "home",
-                "target": "ball",
-                "destination": "basket",
+                "target": "sports ball",
+                "destination": "bowl",
                 "reasoning": "복귀",
             },
         }
@@ -89,14 +89,14 @@ def test_parse_pure_chat() -> None:
 def test_parse_camera_question() -> None:
     raw = json.dumps(
         {
-            "answer": {"text": "카메라에 ball과 basket이 보입니다."},
+            "answer": {"text": "카메라에 sports ball과 bowl이 보입니다."},
             "command": None,
             "reasoning": "카메라 정보 조회",
         }
     )
     resp = parse_llm_response(raw, "지금 뭐 보여?")
     assert resp.command is None
-    assert "ball" in resp.answer.text
+    assert "sports ball" in resp.answer.text
     assert resp.reasoning == "카메라 정보 조회"
 
 
@@ -120,22 +120,22 @@ def test_parse_compound_input() -> None:
     """질문 + 명령이 섞인 복합 입력 — answer와 command 모두 채워짐."""
     raw = json.dumps(
         {
-            "answer": {"text": "네, 공이 보여요. 바구니에 넣어드릴게요."},
+            "answer": {"text": "네, 공이 보여요. 그릇에 넣어드릴게요."},
             "command": {
                 "action": "pick_and_place",
-                "target": "ball",
-                "destination": "basket",
+                "target": "sports ball",
+                "destination": "bowl",
                 "reasoning": "복합 명령",
             },
             "reasoning": "질문에 답하고 명령 수행",
         }
     )
-    resp = parse_llm_response(raw, "저기 공 보여? 저거 집어서 바구니에 넣어줘")
+    resp = parse_llm_response(raw, "저기 공 보여? 저거 집어서 그릇에 넣어줘")
     assert "공이 보여" in resp.answer.text
     assert resp.command is not None
     assert resp.command.action == ActionType.PICK_AND_PLACE
-    assert resp.command.target == "ball"
-    assert resp.command.destination == "basket"
+    assert resp.command.target == "sports ball"
+    assert resp.command.destination == "bowl"
 
 
 # --- 마크다운 코드 블록 추출 ---------------------------------------------------
@@ -217,7 +217,7 @@ def test_unknown_action_value_preserves_answer() -> None:
     raw = json.dumps(
         {
             "answer": {"text": "그건 못 합니다."},
-            "command": {"action": "fly", "target": "ball"},
+            "command": {"action": "fly", "target": "sports ball"},
         }
     )
     resp = parse_llm_response(raw, "날아라")
@@ -229,7 +229,7 @@ def test_unknown_action_value_preserves_answer() -> None:
 
 def test_missing_action_field_preserves_answer() -> None:
     raw = json.dumps(
-        {"answer": {"text": "명령 인식 실패"}, "command": {"target": "ball"}}
+        {"answer": {"text": "명령 인식 실패"}, "command": {"target": "sports ball"}}
     )
     resp = parse_llm_response(raw, "x")
     assert resp.answer.text == "명령 인식 실패"
@@ -255,7 +255,7 @@ def test_place_without_destination_preserves_answer() -> None:
     raw = json.dumps(
         {
             "answer": {"text": "어디에 둘지 알려주세요."},
-            "command": {"action": "place", "target": "ball"},
+            "command": {"action": "place", "target": "sports ball"},
         }
     )
     resp = parse_llm_response(raw, "x")
@@ -286,7 +286,7 @@ def test_raw_input_preserved_in_command() -> None:
     raw = json.dumps(
         {
             "answer": {"text": "공을 잡을게요."},
-            "command": {"action": "pick", "target": "ball"},
+            "command": {"action": "pick", "target": "sports ball"},
         }
     )
     resp = parse_llm_response(raw, "공 잡아줘")

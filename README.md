@@ -88,10 +88,11 @@ PAI-Language 모듈
   LLM: gpt-4o-mini
   종료: quit / exit / Ctrl+C
 ==================================================
-> 공 잡아서 바구니에 넣어줘
+> 공 집어서 그릇에 넣어줘
 처리 중...
-[명령 파싱] action=pick_and_place, target=ball, destination=basket
-[근거] 공을 바구니에 담는 복합 동작 요청
+[답변] 네, 공을 그릇에 넣어드릴게요.
+[명령 파싱] action=pick_and_place, target=sports ball, destination=bowl
+[근거] 공을 그릇에 담는 복합 동작 요청
 [명령 미전송 — 송신 대상 없음]
 > quit
 종료됨.
@@ -177,7 +178,7 @@ PAI-Language/
 | `objects[].confidence`   | 감지 신뢰도             |
 | `objects[].status`       | tracked 여부            |
 
-→ 프롬프트 삽입 형태: `"현재 카메라: ball(화면 중앙 좌측, 신뢰도 0.91), basket(화면 우측, 신뢰도 0.87)"`
+→ 프롬프트 삽입 형태: `"현재 카메라: sports ball(위치=[674,188], 신뢰도 0.91), bowl(위치=[980,540], 신뢰도 0.87)"`
 
 ---
 

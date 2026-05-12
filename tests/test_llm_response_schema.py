@@ -28,7 +28,7 @@ def test_llm_response_with_answer_and_command() -> None:
     """명령 케이스 — answer + command 둘 다."""
     resp = LLMResponse(
         answer=AssistantAnswer(text="공을 잡을게요."),
-        command=RobotCommand(action=ActionType.PICK, target="ball"),
+        command=RobotCommand(action=ActionType.PICK, target="sports ball"),
         reasoning="명령 의도 확인",
     )
     assert resp.command is not None
@@ -46,7 +46,7 @@ def test_llm_response_accepts_command_as_dict() -> None:
     """dict로 command를 줘도 RobotCommand로 자동 변환."""
     resp = LLMResponse(
         answer=AssistantAnswer(text="ok"),
-        command={"action": "pick", "target": "ball"},
+        command={"action": "pick", "target": "sports ball"},
     )
     assert isinstance(resp.command, RobotCommand)
     assert resp.command.action == ActionType.PICK

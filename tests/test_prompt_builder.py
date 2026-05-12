@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from language.llm.prompt_builder import SYSTEM_PROMPT, build_user_prompt
+from shared.constants import COCO_LABELS
 
 
 # --- SYSTEM_PROMPT 회귀 보호 -------------------------------------------------
@@ -16,6 +17,19 @@ def test_system_prompt_lists_all_action_types() -> None:
     """SYSTEM_PROMPT가 모든 action 옵션을 명시해야 한다."""
     for action in ("pick", "place", "pick_and_place", "home", "stop"):
         assert f'"{action}"' in SYSTEM_PROMPT, f"{action} action 누락"
+
+
+def test_system_prompt_lists_every_known_label() -> None:
+    """target/destination 후보가 되는 COCO 라벨 전부가 프롬프트에 나열되어야 함."""
+    for label in COCO_LABELS:
+        assert label in SYSTEM_PROMPT, f"라벨 누락: {label!r}"
+
+
+def test_system_prompt_mentions_demo_labels_and_korean_mapping() -> None:
+    """데모 객체(sports ball / bowl)와 한국어→라벨 매핑 안내가 명시되어야 함."""
+    assert "sports ball" in SYSTEM_PROMPT
+    assert "bowl" in SYSTEM_PROMPT
+    assert "인식 가능한 객체 라벨" in SYSTEM_PROMPT
 
 
 def test_system_prompt_specifies_json_only_output() -> None:
@@ -58,10 +72,10 @@ def test_system_prompt_allows_command_null() -> None:
 
 
 def test_user_prompt_includes_both_sections() -> None:
-    out = build_user_prompt("공 잡아줘", "현재 카메라: ball(0.91)")
+    out = build_user_prompt("공 잡아줘", "현재 카메라: sports ball(0.91)")
     assert "[카메라 상태]" in out
     assert "[사용자 명령]" in out
-    assert "현재 카메라: ball(0.91)" in out
+    assert "현재 카메라: sports ball(0.91)" in out
     assert "공 잡아줘" in out
 
 
@@ -86,6 +100,6 @@ def test_user_prompt_handles_empty_vision_context() -> None:
 
 
 def test_user_prompt_handles_korean_text() -> None:
-    out = build_user_prompt("바구니에 공을 넣어줘", "현재 카메라: ball, basket")
-    assert "바구니에 공을 넣어줘" in out
-    assert "현재 카메라: ball, basket" in out
+    out = build_user_prompt("그릇에 공을 넣어줘", "현재 카메라: sports ball, bowl")
+    assert "그릇에 공을 넣어줘" in out
+    assert "현재 카메라: sports ball, bowl" in out

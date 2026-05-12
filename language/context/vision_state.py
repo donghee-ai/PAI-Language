@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
+from shared.constants import KNOWN_LABELS
 from shared.schemas.vision import VisionUpdate
 
 log = logging.getLogger(__name__)
@@ -33,6 +34,20 @@ class VisionState:
 
     def __init__(self) -> None:
         self._objects: list[DetectedObject] = []
+        # 알 수 없는 label은 최초 1회만 경고한다 (vision_update가 ~10Hz로 들어와서
+        # 매 프레임 찍으면 로그가 폭주함).
+        self._warned_labels: set[str] = set()
+
+    def _warn_if_unknown_label(self, label: str) -> None:
+        """KNOWN_LABELS(현재 COCO 80개)에 없는 label이면 최초 1회만 경고."""
+        if label in KNOWN_LABELS or label in self._warned_labels:
+            return
+        self._warned_labels.add(label)
+        log.warning(
+            "알 수 없는 vision label %r — shared/constants.py 의 COCO_LABELS 에 없음. "
+            "Vision 모델이 바뀌었거나 라벨 합의가 어긋났을 수 있음.",
+            label,
+        )
 
     def update(self, data: dict) -> None:
         """vision_update 메시지의 data 페이로드를 받아 필터링 후 저장.
@@ -52,16 +67,20 @@ class VisionState:
             self._update_from_dict(data)
             return
 
-        self._objects = [
-            DetectedObject(
-                label=obj.label,
-                center_pixel=list(obj.center_pixel),
-                confidence=obj.confidence,
-                status=obj.status,
+        objects: list[DetectedObject] = []
+        for obj in update.objects:
+            if len(obj.center_pixel) != 2:
+                continue
+            self._warn_if_unknown_label(obj.label)
+            objects.append(
+                DetectedObject(
+                    label=obj.label,
+                    center_pixel=list(obj.center_pixel),
+                    confidence=obj.confidence,
+                    status=obj.status,
+                )
             )
-            for obj in update.objects
-            if len(obj.center_pixel) == 2
-        ]
+        self._objects = objects
         log.debug("vision 업데이트(typed): %d개 객체", len(self._objects))
 
     def _update_from_dict(self, data: dict) -> None:
@@ -88,8 +107,10 @@ class VisionState:
                 log.warning("center_pixel 형식 오류 무시: %r", obj)
                 continue
             try:
+                label_str = str(label)
+                self._warn_if_unknown_label(label_str)
                 parsed.append(DetectedObject(
-                    label=str(label),
+                    label=label_str,
                     center_pixel=[int(cp[0]), int(cp[1])],
                     confidence=float(confidence),
                     status=str(obj.get("status", "detected")),

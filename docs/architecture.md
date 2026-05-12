@@ -2,8 +2,9 @@
 
 ## 1. 프로젝트 개요
 
-LeRobot SO-ARM 기반 로봇 팔이 공을 집어 바구니에 담는 작업을 수행하는 시스템.
+LeRobot SO-ARM 기반 로봇 팔이 스포츠볼(COCO 라벨 `"sports ball"`)을 집어 그릇(`"bowl"`)에 담는 작업을 수행하는 시스템.
 세 파트(Vision, Language, Action)가 중앙 Coordinator를 통해 통신하는 모노레포 구조.
+(데모 시나리오: "스포츠볼 집어서 그릇에 넣어줘". 초기에 `ball`/`basket`으로 잡았으나, COCO 사전학습 YOLO에 `basket`이 없어 `bowl`로 변경 — 2026-05-12.)
 
 | 파트        | 담당   | 역할                                                                |
 | ----------- | ------ | ------------------------------------------------------------------- |
@@ -232,7 +233,8 @@ Phase 1 (False)                     Phase 2 (True)
 제거 필드: bbox_xyxy, area_pixels, frame_id, inference_ms, loop_fps 등
 
 → OpenAI 프롬프트에 삽입하는 형태 예시:
-   "현재 카메라: ball(화면 중앙 좌측, 신뢰도 0.91), basket(화면 우측, 신뢰도 0.87)"
+   "현재 카메라: sports ball(위치=[674,188], 신뢰도 0.91), bowl(위치=[980,540], 신뢰도 0.87)"
+   (※ 현재 코드는 center_pixel을 raw px로 전달. 의미 구역화는 미적용 — 미결 사항 참조)
 ```
 
 ---
@@ -258,7 +260,7 @@ Phase 1 (False)                     Phase 2 (True)
 | Coordinator 모듈 구현         | **미구현 — Vision 직결합으로 임시 우회** | 완성 시 `COORDINATOR_WS_URL` 추가 + 연결 대상 전환      |
 | Envelope 표준 wire 적용       | PAI-Vision 측에서 이미 적용              | Coordinator 도입 시 동일 envelope을 그대로 사용         |
 | `robot_command` 스키마 필드   | 초안 작성 완료, Action팀 합의 필요       | `docs/command_schema.md`                                |
-| YOLO target label 목록 확정   | Vision팀과 합의 필요                     | ball, basket 등                                         |
+| YOLO target label 목록 확정   | COCO 80개로 임시 확정 (2026-05-12)       | `shared/constants.py` `COCO_LABELS`. 커스텀 객체(basket 등)는 추후 fine-tuning / open-vocab 필요 |
 | OpenAI 모델 선택              | 추후 결정                                | 초안: gpt-4o-mini                                       |
 | `shared/` → Coordinator 이전  | Phase 2 도입 시                          | 스키마·상수의 단일 출처를 Coordinator 레포로 이동       |
 | LLM 답변(`answer`)의 wire화   | 미정 — 현재 stdout 전용                  | Phase 2에서 `assistant_answer` 같은 신규 메시지 타입을 둘지, 답변은 Language 로컬 출력에만 머물게 둘지 결정 필요 |

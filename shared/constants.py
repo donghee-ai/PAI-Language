@@ -18,7 +18,32 @@ SENDER_LANGUAGE = "language"
 SENDER_VISION = "vision"
 SENDER_ACTION = "action"
 
-# YOLO 라벨 (Vision팀 확정 시 갱신)
-LABEL_BALL = "ball"
-LABEL_BASKET = "basket"
-KNOWN_LABELS = [LABEL_BALL, LABEL_BASKET]
+# YOLO 라벨
+#
+# 현재 PAI-Vision은 COCO 사전학습 `yolo11s-seg.pt`를 쓰므로 emit 가능한 label은
+# 아래 COCO 80개 클래스가 전부다 (`result.names` 가 그대로 이 문자열들을 반환).
+# 튜플 인덱스 = YOLO class id. Vision이 커스텀 fine-tuning / open-vocab 모델로
+# 바꾸면 이 목록도 그 모델의 names로 갱신해야 한다.
+#
+# 주의: 공은 "ball"이 아니라 "sports ball"(공백 포함)이고, "basket"은 COCO에 없다.
+COCO_LABELS: tuple[str, ...] = (
+    "person", "bicycle", "car", "motorcycle", "airplane",
+    "bus", "train", "truck", "boat", "traffic light",
+    "fire hydrant", "stop sign", "parking meter", "bench", "bird",
+    "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe", "backpack",
+    "umbrella", "handbag", "tie", "suitcase", "frisbee",
+    "skis", "snowboard", "sports ball", "kite", "baseball bat",
+    "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle",
+    "wine glass", "cup", "fork", "knife", "spoon",
+    "bowl", "banana", "apple", "sandwich", "orange",
+    "broccoli", "carrot", "hot dog", "pizza", "donut",
+    "cake", "chair", "couch", "potted plant", "bed",
+    "dining table", "toilet", "tv", "laptop", "mouse",
+    "remote", "keyboard", "cell phone", "microwave", "oven",
+    "toaster", "sink", "refrigerator", "book", "clock",
+    "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
+)
+
+# robot_command 의 target / destination 으로 허용되는 label 집합 (멤버십 체크용).
+KNOWN_LABELS = frozenset(COCO_LABELS)
