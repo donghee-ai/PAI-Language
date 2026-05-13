@@ -9,7 +9,7 @@ LeRobot SO-ARM 기반 로봇 팔이 스포츠볼(COCO 라벨 `"sports ball"`)을
 | 파트        | 담당   | 역할                                                                |
 | ----------- | ------ | ------------------------------------------------------------------- |
 | Vision      | 팀원 A | YOLO를 통한 객체 감지, 위치 정보 제공                               |
-| Language    | 담당자 | 사용자 자연어 수신 → OpenAI API → 구조화 명령 생성                  |
+| Language    | 담당자 | 사용자 자연어 수신 → OpenAI API → 대화 응답 / 카메라 질문 답변 / 구조화 명령 생성 (CLI·Tkinter UI) |
 | Action      | 팀원 B | LeRobot SO-ARM 제어 실행                                            |
 | Coordinator | (공동) | WebSocket / ROS2 양쪽을 관리하는 중앙 브로커 (Phase 2 도입 예정)    |
 
@@ -19,18 +19,18 @@ LeRobot SO-ARM 기반 로봇 팔이 스포츠볼(COCO 라벨 `"sports ball"`)을
 
 본 시스템은 두 단계를 거쳐 진화한다.
 
-### 2.1 Phase 1 — 현재: Vision 직결합 (2026-05-08~)
+### 2.1 Phase 1 — 현재: Vision 직결합 (2026-05-08~, 실연동 확인 2026-05-13)
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │                  PAI-Language (Phase 1: 직결합)               │
 │                                                              │
 │   [User]                                                     │
-│     │ stdin (자연어)                                         │
+│     │ stdin(CLI) 또는 Tkinter UI 입력칸 (자연어)             │
 │     ▼                                                        │
 │  [Language] ──────── WS (vision_update 수신만) ─────► [Vision = WS 서버] │
 │     │                                                        │
-│     ▼ stdout                                                 │
+│     ▼ emit 싱크 (CLI=stdout / UI=채팅창)                     │
 │  [답변 + (명령 있으면) 명령 파싱 결과 출력]                  │
 │   ※ robot_command 미전송                                     │
 │                                                              │
@@ -42,7 +42,9 @@ LeRobot SO-ARM 기반 로봇 팔이 스포츠볼(COCO 라벨 `"sports ball"`)을
 
 - PAI-Vision이 이미 WS 서버 (`@app.websocket("/ws/scenes")`)
 - PAI-Vision이 표준 envelope(`{type, timestamp, sender, data}`) 형태로 송출 (PAI-Vision `app/main.py`의 `_build_scene_envelope`). PAI-Language 측 별도 어댑터 불필요.
-- `Config.coordinator_enabled = False` 기본값 → 명령은 stdout 출력만
+- `Config.coordinator_enabled = False` 기본값 → 명령은 화면 출력만
+- 사용자 접점은 둘 — CLI 진입점 `python -m language.main`, 데스크톱 UI 진입점 `python -m language.ui`(Tkinter). 둘 다 동일한 `LanguageApp` 을 쓰며, 사용자 대상 출력은 `emit` 싱크로 추상화됨 (CLI=`print`, UI=메인 스레드 큐 경유 채팅창 + Vision 상태줄).
+- **2026-05-13 실연동 확인:** PAI-Vision 실시간 송출(`/ws/scenes`)과 함께, 일상 대화 / 카메라 질문 / 로봇 명령 / 복합 입력 자동 분기가 의도대로 동작함을 로컬 E2E 로 확인 ([`logs/2026-05-13_vision-language-e2e-verified.md`](../logs/2026-05-13_vision-language-e2e-verified.md)).
 - 본 단계는 Coordinator 스펙이 확정될 때까지의 임시 구조이며, Phase 2 도입 시 일괄 전환된다.
 
 ### 2.2 Phase 2 — 합의됨(2026-05-09): PAI-Coordinator 중앙 허브
@@ -87,7 +89,8 @@ PAI-Language/
 │   └── constants.py                # WS URL, 토픽 이름, 레이블 상수
 │
 ├── language/                       # 자연어 처리 파트 (담당자)
-│   ├── main.py                     # 진입점, 이벤트 루프 조율
+│   ├── main.py                     # CLI 진입점, 이벤트 루프 조율 (LanguageApp; emit 출력 싱크 주입 가능)
+│   ├── ui.py                       # 데스크톱 UI 진입점 (Tkinter; LanguageApp 을 백그라운드 asyncio 루프에서 구동)
 │   ├── config.py                   # 환경변수, OpenAI key, WS URL
 │   ├── ws/
 │   │   ├── client.py               # WS 연결 및 재연결 관리
@@ -130,12 +133,13 @@ PAI-Language/
 
 ### Language (담당 파트)
 
-- CLI(stdin)로 사용자 자연어 입력 수신 (일상 대화 / 카메라 질문 / 로봇 명령 / 복합)
+- 사용자 자연어 입력 수신 (일상 대화 / 카메라 질문 / 로봇 명령 / 복합) — 입력 채널은 CLI(stdin) 또는 데스크톱 UI(Tkinter 입력칸). 둘 다 같은 `LanguageApp.handle_user_input` 으로 들어간다.
 - `vision_update`에서 최소 context 추출 (label, center_pixel)
 - `prompt_builder`가 "사용자 입력 + 현재 감지 객체"를 합쳐 OpenAI에 전달
 - LLM 출력을 `LLMResponse`로 파싱 — 자연어 답변(`answer`)은 항상 생성, 로봇 명령(`command`)은 사용자 입력에 명령 의도가 있을 때만 추출
-- Phase 1: 답변과 (있으면) 명령 파싱 결과를 stdout 출력. `robot_command`는 wire로 미전송
-- Phase 2: 답변은 계속 stdout, `command`만 Coordinator로 송신. Coordinator가 relay한 `action_status`는 사용자에게 출력
+- 사용자 대상 출력은 `emit` 싱크로 추상화 — CLI 는 `print`, UI 는 메인 스레드 큐를 거쳐 채팅창에 표시(답변은 본문 색, `[근거]`/`[명령 …]` 등 처리 흔적은 회색으로 구분)
+- Phase 1: 답변과 (있으면) 명령 파싱 결과를 화면 출력. `robot_command`는 wire로 미전송
+- Phase 2: 답변은 계속 로컬 출력, `command`만 Coordinator로 송신. Coordinator가 relay한 `action_status`는 사용자에게 출력
 
 ### Action
 
@@ -181,12 +185,12 @@ PAI-Language/
 
 ```text
 [User]
-  │ stdin 자연어 입력
+  │ 자연어 입력
   ▼
-[cli_handler.py]
-  │ user_text 이벤트
+[cli_handler.py] (CLI)  /  [ui.py] 입력칸 → run_coroutine_threadsafe (UI)
+  │ user_text
   ▼
-[main.py / orchestrator] ◄────── vision_context ──── [vision_state.py]
+[main.py / LanguageApp.handle_user_input] ◄────── vision_context ──── [vision_state.py]
   │                                                        ▲
   │                                               [dispatcher.py]
   │                                                        ▲
@@ -203,7 +207,7 @@ PAI-Language/
 [response_parser.py]
   LLM JSON 출력 → LLMResponse(answer 필수 + Optional command) + 유효성 검증
   │
-  ├─► [답변] answer.text 항상 stdout 출력
+  ├─► [답변] answer.text 항상 emit 싱크로 출력 (CLI=stdout / UI=채팅창)
   │
   ▼ command is not None?
   ├─ None  → 종료 (순수 대화/질문)
@@ -213,13 +217,13 @@ PAI-Language/
 ┌────────── coordinator_enabled? ──────────┐
 ▼                                          ▼
 Phase 1 (False)                     Phase 2 (True)
-[명령 파싱] stdout 출력만           [ws/client.py] ───► Coordinator (robot_command 송신)
+[명령 파싱] emit 싱크로 출력만      [ws/client.py] ───► Coordinator (robot_command 송신)
                                                          │
                                                          ▼
                                     [dispatcher.py] ◄─── Coordinator (action_status 수신)
                                                          │
                                                          ▼
-                                    [cli_handler.py] → 사용자에게 결과 출력
+                                    emit 싱크 → 사용자에게 결과 출력
 ```
 
 ---
@@ -248,6 +252,7 @@ Phase 1 (False)                     Phase 2 (True)
 | OpenAI      | `openai` SDK (async)                   |
 | 데이터 검증 | `pydantic` v2                          |
 | 비동기      | `asyncio`                              |
+| 데스크톱 UI | `tkinter` (Python 표준 라이브러리)     |
 | 로봇 제어   | LeRobot + SO-ARM100                    |
 | 객체 감지   | YOLO11s-seg                            |
 

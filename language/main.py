@@ -41,8 +41,10 @@ log = logging.getLogger(__name__)
 class LanguageApp:
     """Language 파트 오케스트레이터."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, *, emit=None) -> None:
         self.config = config
+        # 사용자 대상 출력 싱크. 기본은 stdout(CLI). GUI 등은 콜백을 주입해 가로챈다.
+        self.emit = emit if emit is not None else print
         self.vision = VisionState()
         self.llm = LLMClient(config)
         self.hub = HubClient(config)
@@ -70,8 +72,7 @@ class LanguageApp:
         status = data.get("status", "unknown")
         action_ref = data.get("action_ref", "")
         message = data.get("message", "")
-        print(f"\n[Action] {status} | {action_ref}: {message}")
-        print("> ", end="", flush=True)
+        self.emit(f"[Action] {status} | {action_ref}: {message}")
 
     # -- 사용자 입력 처리 --
 
@@ -80,29 +81,29 @@ class LanguageApp:
         vision_context = self.vision.to_context_string()
         user_prompt = build_user_prompt(user_text, vision_context)
 
-        print("처리 중...")
+        self.emit("처리 중...")
 
         try:
             raw_response = await self.llm.chat(SYSTEM_PROMPT, user_prompt)
         except openai.AuthenticationError:
-            print("[오류] OpenAI API 키가 유효하지 않습니다. .env 파일을 확인하세요.")
+            self.emit("[오류] OpenAI API 키가 유효하지 않습니다. .env 파일을 확인하세요.")
             return
         except openai.RateLimitError:
-            print("[오류] OpenAI API 요청 한도 초과. 잠시 후 다시 시도하세요.")
+            self.emit("[오류] OpenAI API 요청 한도 초과. 잠시 후 다시 시도하세요.")
             return
         except openai.APIConnectionError:
-            print("[오류] OpenAI API 서버에 연결할 수 없습니다. 네트워크를 확인하세요.")
+            self.emit("[오류] OpenAI API 서버에 연결할 수 없습니다. 네트워크를 확인하세요.")
             return
         except openai.APIError as exc:
-            print(f"[오류] OpenAI API 오류: {exc}")
+            self.emit(f"[오류] OpenAI API 오류: {exc}")
             return
 
         response = parse_llm_response(raw_response, user_text)
 
         # 1. 일반 LLM 대화처럼 답변은 항상 출력
-        print(f"[답변] {response.answer.text}")
+        self.emit(f"[답변] {response.answer.text}")
         if response.reasoning:
-            print(f"[근거] {response.reasoning}")
+            self.emit(f"[근거] {response.reasoning}")
 
         # 2. 명령 의도가 없으면 종료 (순수 대화/질문)
         if response.command is None:
@@ -115,10 +116,10 @@ class LanguageApp:
         # envelope 구성 후 전송 — Coordinator가 활성화된 경우에만.
         # 현재 Vision 직결합 단계에서는 송신 대상이 없으므로 파싱 결과를 stdout에만 출력한다.
         if not self.config.coordinator_enabled:
-            print(f"[명령 파싱] action={command.action.value}, "
-                  f"target={command.target}, destination={command.destination}")
-            print(f"[근거] {command.reasoning}")
-            print("[명령 미전송 — 송신 대상 없음]")
+            self.emit(f"[명령 파싱] action={command.action.value}, "
+                      f"target={command.target}, destination={command.destination}")
+            self.emit(f"[근거] {command.reasoning}")
+            self.emit("[명령 미전송 — 송신 대상 없음]")
             return
 
         envelope = {
@@ -131,15 +132,15 @@ class LanguageApp:
         try:
             await self.hub.send(envelope)
         except (asyncio.TimeoutError, TimeoutError):
-            print("[오류] Coordinator에 연결되어 있지 않아 명령 전송에 실패했습니다.")
+            self.emit("[오류] Coordinator에 연결되어 있지 않아 명령 전송에 실패했습니다.")
             return
         except Exception as exc:
-            print(f"[오류] 명령 전송 중 오류: {exc}")
+            self.emit(f"[오류] 명령 전송 중 오류: {exc}")
             return
 
-        print(f"[명령 전송] action={command.action.value}, "
-              f"target={command.target}, destination={command.destination}")
-        print(f"[근거] {command.reasoning}")
+        self.emit(f"[명령 전송] action={command.action.value}, "
+                  f"target={command.target}, destination={command.destination}")
+        self.emit(f"[근거] {command.reasoning}")
 
     # -- 실행 --
 
