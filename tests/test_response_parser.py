@@ -309,3 +309,39 @@ def test_optional_command_fields_default_to_safe_values() -> None:
     assert resp.command.destination == "none"
     assert resp.command.reasoning == ""
     assert resp.command.raw_input == "멈춰"
+    assert resp.command.instruction == "stop"  # 폴백 생성
+
+
+# --- instruction 라운드트립 / 폴백 ---------------------------------------------
+
+
+def test_instruction_explicit_value_is_preserved() -> None:
+    """LLM이 instruction을 명시한 경우 그대로 보존."""
+    raw = json.dumps(
+        {
+            "answer": {"text": "공을 그릇에 넣어드릴게요."},
+            "command": {
+                "action": "pick_and_place",
+                "target": "sports ball",
+                "destination": "bowl",
+                "instruction": "pick up the sports ball and place it in the bowl",
+                "reasoning": "복합 명령",
+            },
+        }
+    )
+    resp = parse_llm_response(raw, "공 그릇에 넣어")
+    assert resp.command is not None
+    assert resp.command.instruction == "pick up the sports ball and place it in the bowl"
+
+
+def test_instruction_missing_is_auto_derived() -> None:
+    """LLM이 instruction 필드를 누락해도 action/target/destination 으로부터 폴백 생성."""
+    raw = json.dumps(
+        {
+            "answer": {"text": "네, 잡을게요."},
+            "command": {"action": "pick", "target": "sports ball"},
+        }
+    )
+    resp = parse_llm_response(raw, "공 잡아줘")
+    assert resp.command is not None
+    assert resp.command.instruction == "pick up the sports ball"

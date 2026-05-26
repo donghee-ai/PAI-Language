@@ -42,7 +42,7 @@ from language.main import LanguageApp
 log = logging.getLogger(__name__)
 
 # emit 으로 들어온 한 줄을 어떤 스타일로 표시할지 결정하기 위한 접두어들.
-_META_PREFIXES = ("[근거]", "[명령", "[Action]", "[오류]", "처리 중")
+_META_PREFIXES = ("[근거]", "[명령", "[Action]", "[오류]", "[instruction]", "[ZMQ", "처리 중")
 
 
 class LanguageUI:
@@ -59,6 +59,9 @@ class LanguageUI:
         self.loop = asyncio.new_event_loop()
         self._out_q: "queue.Queue[str]" = queue.Queue()
         self.app = LanguageApp(self.config, emit=self._emit_threadsafe)
+        # ZMQ instruction publisher 등 백그라운드 서비스 기동.
+        # UI 는 LanguageApp.run() 을 거치지 않고 hub.run() 만 직접 돌리므로 여기서 호출.
+        self.app.start_services()
 
         self._busy = False  # LLM 호출 진행 중 (중복 전송 방지)
         self._build_widgets()
@@ -206,6 +209,11 @@ class LanguageUI:
             self.loop.call_soon_threadsafe(_cancel_all)
         except Exception:  # noqa: BLE001
             pass
+        # ZMQ 소켓 등 백그라운드 서비스 종료.
+        try:
+            self.app.stop_services()
+        except Exception:  # noqa: BLE001
+            log.exception("백그라운드 서비스 종료 중 예외")
         # asyncio 스레드(daemon)가 정리할 시간을 잠깐 준 뒤 창 종료
         self.root.after(150, self.root.destroy)
 

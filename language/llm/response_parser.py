@@ -75,6 +75,7 @@ def _parse_command(command_data: object, raw_input: str) -> Optional[RobotComman
             action=ActionType(command_data["action"]),
             target=command_data.get("target", "none"),
             destination=command_data.get("destination", "none"),
+            instruction=command_data.get("instruction", ""),
             reasoning=command_data.get("reasoning", ""),
             raw_input=raw_input,
         )

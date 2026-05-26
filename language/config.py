@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from shared.constants import VISION_WS_URL
+from shared.constants import INSTRUCTION_PUB_BIND_DEFAULT, VISION_WS_URL
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -30,6 +30,16 @@ class Config:
     # 않고 stdout으로만 출력한다. Phase 2(Coordinator 도입) 시 COORDINATOR_ENABLED=1 로 설정.
     coordinator_enabled: bool = field(
         default_factory=lambda: os.getenv("COORDINATOR_ENABLED", "0") == "1"
+    )
+
+    # LeRobot Action 직결합용 ZMQ instruction publisher. 기본 활성. LeRobot 측은
+    # ZMQ SUB 소켓으로 INSTRUCTION_PUB_BIND 에 connect 한다 (bind는 Language가 한다).
+    # Coordinator 도입 후 라우팅을 그쪽으로 옮기면 INSTRUCTION_PUB_ENABLED=0 으로 끄면 된다.
+    instruction_pub_enabled: bool = field(
+        default_factory=lambda: os.getenv("INSTRUCTION_PUB_ENABLED", "1") == "1"
+    )
+    instruction_pub_bind: str = field(
+        default_factory=lambda: os.getenv("INSTRUCTION_PUB_BIND", INSTRUCTION_PUB_BIND_DEFAULT)
     )
 
     def validate(self) -> None:

@@ -26,6 +26,7 @@ from language.llm.prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from language.llm.response_parser import parse_llm_response
 from language.ws.client import HubClient
 from language.ws.dispatcher import Dispatcher
+from language.zmq_pub.instruction_publisher import InstructionPublisher
 
 # vision_update 로그 throttle 주기 — 카메라가 보통 10Hz로 송출하므로 매 프레임 INFO를
 # 찍으면 사용자 입력 prompt가 묻힌다. 매 프레임은 DEBUG로, INFO 요약은 이 간격으로만.
@@ -49,6 +50,11 @@ class LanguageApp:
         self.llm = LLMClient(config)
         self.hub = HubClient(config)
         self.dispatcher = Dispatcher()
+        self.instruction_publisher = (
+            InstructionPublisher(bind_address=config.instruction_pub_bind)
+            if config.instruction_pub_enabled
+            else None
+        )
         self._last_vision_info_log = 0.0
 
         # 메시지 핸들러 등록
@@ -113,13 +119,23 @@ class LanguageApp:
         command = response.command
         command.vision_confirmed = self.vision.has_label(command.target)
 
+        # LeRobot Action 으로 instruction을 ZMQ로 발행 (활성화돼 있으면).
+        # Coordinator 경로와 독립적 — 현재 Vision 직결합 단계에서도 로봇은 바로 움직일 수 있다.
+        published = False
+        if self.instruction_publisher is not None:
+            published = self.instruction_publisher.publish(command)
+
         # envelope 구성 후 전송 — Coordinator가 활성화된 경우에만.
-        # 현재 Vision 직결합 단계에서는 송신 대상이 없으므로 파싱 결과를 stdout에만 출력한다.
+        # 현재 Vision 직결합 단계에서는 Coordinator 송신 대상이 없으므로 파싱 결과를 stdout으로만 출력한다.
         if not self.config.coordinator_enabled:
             self.emit(f"[명령 파싱] action={command.action.value}, "
                       f"target={command.target}, destination={command.destination}")
+            self.emit(f"[instruction] {command.instruction}")
             self.emit(f"[근거] {command.reasoning}")
-            self.emit("[명령 미전송 — 송신 대상 없음]")
+            if published:
+                self.emit(f"[ZMQ 발행 → LeRobot] {self.config.instruction_pub_bind}")
+            else:
+                self.emit("[Coordinator 미전송 — 송신 대상 없음]")
             return
 
         envelope = {
@@ -140,31 +156,53 @@ class LanguageApp:
 
         self.emit(f"[명령 전송] action={command.action.value}, "
                   f"target={command.target}, destination={command.destination}")
+        self.emit(f"[instruction] {command.instruction}")
         self.emit(f"[근거] {command.reasoning}")
+        if published:
+            self.emit(f"[ZMQ 발행 → LeRobot] {self.config.instruction_pub_bind}")
 
     # -- 실행 --
+
+    # -- 백그라운드 서비스 라이프사이클 --
+    #
+    # CLI(main)/UI 양쪽에서 동일하게 호출하기 위해 분리. CLI 는 run() 안에서 start/stop,
+    # UI 는 자기 라이프사이클(생성/종료)에서 직접 호출한다.
+
+    def start_services(self) -> None:
+        if self.instruction_publisher is not None:
+            self.instruction_publisher.start()
+
+    def stop_services(self) -> None:
+        if self.instruction_publisher is not None:
+            self.instruction_publisher.stop()
 
     async def run(self) -> None:
         """WS 연결 + 사용자 입력 루프를 동시에 실행."""
         self.config.validate()
+        self.start_services()
 
         print("=" * 50)
         print("PAI-Language 모듈")
-        print(f"  WS: {self.config.ws_url}")
+        print(f"  WS:  {self.config.ws_url}")
         print(f"  LLM: {self.config.openai_model}")
+        if self.instruction_publisher is not None and self.instruction_publisher.enabled:
+            print(f"  ZMQ instruction PUB → LeRobot: {self.config.instruction_pub_bind}")
         print("  종료: quit / exit / Ctrl+C")
         print("=" * 50)
 
         ws_task = asyncio.create_task(self.hub.run())
         input_task = asyncio.create_task(input_loop(self.handle_user_input))
 
-        # 입력 루프가 끝나면(사용자가 quit) 전체 종료
-        done, pending = await asyncio.wait(
-            [ws_task, input_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for t in pending:
-            t.cancel()
+        try:
+            # 입력 루프가 끝나면(사용자가 quit) 전체 종료
+            done, pending = await asyncio.wait(
+                [ws_task, input_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in pending:
+                t.cancel()
+        finally:
+            self.stop_services()
 
 
 def main() -> None:

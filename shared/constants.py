@@ -47,3 +47,13 @@ COCO_LABELS: tuple[str, ...] = (
 
 # robot_command 의 target / destination 으로 허용되는 label 집합 (멤버십 체크용).
 KNOWN_LABELS = frozenset(COCO_LABELS)
+
+
+# ----------------------------------------------------------------------------
+# LeRobot Action 으로 instruction을 내보낼 ZMQ PUB 채널.
+#
+# Vision의 raw frame은 :5555 (lerobot.cameras.zmq.ZMQCamera 와이어 포맷),
+# Language의 instruction은 :5557 PUB. LeRobot 측에서는 ZMQ SUB 소켓을 만들어
+# JSON envelope를 받으면 된다. envelope 스키마는 InstructionPublisher 참고.
+# ----------------------------------------------------------------------------
+INSTRUCTION_PUB_BIND_DEFAULT = "tcp://*:5557"

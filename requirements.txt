@@ -2,6 +2,8 @@ websockets>=14.0
 openai>=1.30
 pydantic>=2.0
 python-dotenv>=1.0
+# LeRobot(Action) 으로 instruction을 PUB 으로 내보내는 ZMQ 채널용
+pyzmq>=25.0
 
 # 테스트
 pytest>=7.0
