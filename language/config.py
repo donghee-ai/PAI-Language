@@ -8,9 +8,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from shared.constants import INSTRUCTION_PUB_BIND_DEFAULT, VISION_WS_URL
+from shared.constants import BOX_LABELS_DEFAULT, INSTRUCTION_PUB_BIND_DEFAULT, VISION_WS_URL
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+
+def _parse_box_labels() -> tuple[str, ...]:
+    """환경변수 BOX_LABELS(쉼표 구분)를 파싱. 미설정/빈 값이면 기본값 사용."""
+    raw = os.getenv("BOX_LABELS", "")
+    labels = tuple(s.strip() for s in raw.split(",") if s.strip())
+    return labels or BOX_LABELS_DEFAULT
 
 
 @dataclass(frozen=True)
@@ -41,6 +48,10 @@ class Config:
     instruction_pub_bind: str = field(
         default_factory=lambda: os.getenv("INSTRUCTION_PUB_BIND", INSTRUCTION_PUB_BIND_DEFAULT)
     )
+
+    # move(박스 옮기기) 명령의 "박스 감지" 게이팅에 쓰는 YOLO 라벨 집합.
+    # COCO 에 'box' 가 없어 실제 박스가 잡히는 라벨로 매핑한다 (BOX_LABELS env 로 덮어쓰기).
+    box_labels: tuple[str, ...] = field(default_factory=_parse_box_labels)
 
     def validate(self) -> None:
         if not self.openai_api_key:

@@ -134,6 +134,19 @@ class VisionState:
     def has_label(self, label: str) -> bool:
         return any(o.label == label for o in self._objects)
 
+    def has_any_label(self, labels) -> bool:
+        """주어진 라벨 집합 중 하나라도 감지됐는지. (move 의 box 게이팅용)"""
+        label_set = set(labels)
+        return any(o.label in label_set for o in self._objects)
+
+    def first_matching_label(self, labels) -> str | None:
+        """주어진 라벨 집합 중 감지된 첫 라벨을 반환(없으면 None). 로그/메시지용."""
+        label_set = set(labels)
+        for o in self._objects:
+            if o.label in label_set:
+                return o.label
+        return None
+
     def to_context_string(self) -> str:
         """OpenAI 프롬프트에 삽입할 한 줄 요약 문자열 생성."""
         if not self._objects:

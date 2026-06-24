@@ -13,11 +13,14 @@ from datetime import datetime, timezone
 import openai
 
 from shared.constants import (
+    BOX_TARGET_TOKEN,
+    EXECUTABLE_MOVE_COMMANDS,
     SENDER_LANGUAGE,
     TOPIC_ACTION_STATUS,
     TOPIC_ROBOT_COMMAND,
     TOPIC_VISION_UPDATE,
 )
+from shared.schemas.command import ActionType
 from language.config import Config
 from language.context.vision_state import VisionState
 from language.input.cli_handler import input_loop
@@ -117,7 +120,41 @@ class LanguageApp:
 
         # 3. 명령이 있으면 처리
         command = response.command
-        command.vision_confirmed = self.vision.has_label(command.target)
+
+        # 3-1. move 액션: (target, direction) 을 'move_{target}_{direction}' 키로 조립한 뒤
+        #      ① 실행 가능한 등록 명령인지(화이트리스트) ② 대상이 카메라에 감지됐는지
+        #      둘 다 통과해야만 instruction 을 발행해 로봇이 움직이도록 한다.
+        if command.action == ActionType.MOVE:
+            key = command.move_command_key()
+
+            # ① 조립된 키가 실행 가능한 등록 명령인지
+            if key not in EXECUTABLE_MOVE_COMMANDS:
+                self.emit(
+                    f"[move 보류] 실행 가능한 명령이 아닙니다: {key} "
+                    f"(가능: {', '.join(sorted(EXECUTABLE_MOVE_COMMANDS))})"
+                )
+                return
+
+            # ② 대상 감지 게이팅 (box → BOX_LABELS 매핑, 그 외 → 라벨 직접)
+            if command.target == BOX_TARGET_TOKEN:
+                command.vision_confirmed = self.vision.has_any_label(self.config.box_labels)
+            else:
+                command.vision_confirmed = self.vision.has_label(command.target)
+
+            if not command.vision_confirmed:
+                if command.target == BOX_TARGET_TOKEN:
+                    self.emit(
+                        "[move 보류] 박스를 감지하지 못해 실행하지 않습니다 "
+                        f"(box로 인정하는 라벨: {', '.join(self.config.box_labels)}). "
+                        "overhead 캠에 박스가 보이는지 확인하세요."
+                    )
+                else:
+                    self.emit(f"[move 보류] '{command.target}' 가 감지되지 않아 실행하지 않습니다.")
+                return
+
+            self.emit(f"[move 명령 조립] {key}")
+        else:
+            command.vision_confirmed = self.vision.has_label(command.target)
 
         # LeRobot Action 으로 instruction을 ZMQ로 발행 (활성화돼 있으면).
         # Coordinator 경로와 독립적 — 현재 Vision 직결합 단계에서도 로봇은 바로 움직일 수 있다.

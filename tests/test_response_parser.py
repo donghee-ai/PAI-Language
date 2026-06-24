@@ -54,6 +54,42 @@ def test_parse_pick_and_place_full_fields() -> None:
     assert resp.command.destination == "bowl"
 
 
+def test_parse_move_command() -> None:
+    raw = json.dumps(
+        {
+            "answer": {"text": "박스를 왼쪽으로 옮길게요."},
+            "command": {
+                "action": "move",
+                "target": "box",
+                "direction": "left",
+                "reasoning": "박스 왼쪽 이동",
+            },
+            "reasoning": "move 의도",
+        }
+    )
+    resp = parse_llm_response(raw, "박스 왼쪽으로 옮겨")
+    assert resp.command is not None
+    assert resp.command.action == ActionType.MOVE
+    assert resp.command.target == "box"
+    assert resp.command.direction == "left"
+    # instruction 폴백이 학습 task 와 동일해야 함.
+    assert resp.command.instruction == "Move the box to the left"
+
+
+def test_parse_move_without_direction_preserves_answer() -> None:
+    """move + direction 누락 → validator 실패 → answer 보존, command STOP."""
+    raw = json.dumps(
+        {
+            "answer": {"text": "어느 방향으로 옮길까요?"},
+            "command": {"action": "move", "target": "box"},
+        }
+    )
+    resp = parse_llm_response(raw, "박스 옮겨")
+    assert resp.answer.text == "어느 방향으로 옮길까요?"
+    assert resp.command is not None
+    assert resp.command.action == ActionType.STOP
+
+
 def test_parse_home_normalizes_target_destination_to_none() -> None:
     """RobotCommand validator가 home/stop 액션의 target/destination을 'none'으로 강제."""
     raw = json.dumps(

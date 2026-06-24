@@ -133,6 +133,8 @@ def build_envelope(command: RobotCommand) -> dict[str, Any]:
         "action": command.action.value,
         "target": command.target,
         "destination": command.destination,
+        "direction": command.direction,
+        "command_key": command.move_command_key(),
         "raw_input": command.raw_input,
         "reasoning": command.reasoning,
         "vision_confirmed": command.vision_confirmed,
