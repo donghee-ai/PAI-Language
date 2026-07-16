@@ -8,7 +8,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from shared.constants import BOX_LABELS_DEFAULT, INSTRUCTION_PUB_BIND_DEFAULT, VISION_WS_URL
+from shared.constants import (
+    BOX_LABELS_DEFAULT,
+    INSTRUCTION_PUB_BIND_DEFAULT,
+    STOP_KEYWORDS_DEFAULT,
+    TRASH_KEYWORDS_DEFAULT,
+    VISION_WS_URL,
+)
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -18,6 +24,20 @@ def _parse_box_labels() -> tuple[str, ...]:
     raw = os.getenv("BOX_LABELS", "")
     labels = tuple(s.strip() for s in raw.split(",") if s.strip())
     return labels or BOX_LABELS_DEFAULT
+
+
+def _parse_trash_keywords() -> tuple[str, ...]:
+    """환경변수 TRASH_KEYWORDS(쉼표 구분)를 파싱. 미설정/빈 값이면 기본값 사용."""
+    raw = os.getenv("TRASH_KEYWORDS", "")
+    kws = tuple(s.strip() for s in raw.split(",") if s.strip())
+    return kws or TRASH_KEYWORDS_DEFAULT
+
+
+def _parse_stop_keywords() -> tuple[str, ...]:
+    """환경변수 STOP_KEYWORDS(쉼표 구분)를 파싱. 미설정/빈 값이면 기본값 사용."""
+    raw = os.getenv("STOP_KEYWORDS", "")
+    kws = tuple(s.strip() for s in raw.split(",") if s.strip())
+    return kws or STOP_KEYWORDS_DEFAULT
 
 
 @dataclass(frozen=True)
@@ -52,6 +72,15 @@ class Config:
     # move(박스 옮기기) 명령의 "박스 감지" 게이팅에 쓰는 YOLO 라벨 집합.
     # COCO 에 'box' 가 없어 실제 박스가 잡히는 라벨로 매핑한다 (BOX_LABELS env 로 덮어쓰기).
     box_labels: tuple[str, ...] = field(default_factory=_parse_box_labels)
+
+    # 쓰레기-모으기(ACT) 트리거 의도 게이팅 키워드. 사용자 입력에 이 중 하나라도
+    # 포함돼야 LeRobot으로 트리거를 발행한다 (TRASH_KEYWORDS env 로 덮어쓰기).
+    trash_keywords: tuple[str, ...] = field(default_factory=_parse_trash_keywords)
+
+    # 정지(STOP) 의도 게이팅 키워드. 이 중 하나라도 포함되면 LLM 왕복 없이 즉시
+    # 정지 트리거를 발행한다 (STOP_KEYWORDS env 로 덮어쓰기). 쓰레기-모으기보다
+    # 우선 판정한다.
+    stop_keywords: tuple[str, ...] = field(default_factory=_parse_stop_keywords)
 
     def validate(self) -> None:
         if not self.openai_api_key:

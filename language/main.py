@@ -13,14 +13,14 @@ from datetime import datetime, timezone
 import openai
 
 from shared.constants import (
-    BOX_TARGET_TOKEN,
-    EXECUTABLE_MOVE_COMMANDS,
     SENDER_LANGUAGE,
+    STOP_TASK_INSTRUCTION,
     TOPIC_ACTION_STATUS,
     TOPIC_ROBOT_COMMAND,
     TOPIC_VISION_UPDATE,
+    TRASH_TASK_INSTRUCTION,
 )
-from shared.schemas.command import ActionType
+from shared.schemas.command import ActionType, RobotCommand
 from language.config import Config
 from language.context.vision_state import VisionState
 from language.input.cli_handler import input_loop
@@ -87,6 +87,13 @@ class LanguageApp:
 
     async def handle_user_input(self, user_text: str) -> None:
         """사용자 텍스트 → LLM → robot_command 전송."""
+        # 0. 정지 의도 — LLM 왕복 없이 최우선 처리(즉각성). 실행 중이던 ACT 롤아웃을
+        #    즉시 멈추고 초기 대기 자세로 복귀시킨다. rollout 어댑터가 STOP_TASK_INSTRUCTION
+        #    을 받으면 executing=False + engine.reset()(ACT 큐 비우기)을 수행한다.
+        if self._is_stop_intent(user_text):
+            self._publish_stop(user_text)
+            return
+
         vision_context = self.vision.to_context_string()
         user_prompt = build_user_prompt(user_text, vision_context)
 
@@ -114,89 +121,82 @@ class LanguageApp:
         if response.reasoning:
             self.emit(f"[근거] {response.reasoning}")
 
-        # 2. 명령 의도가 없으면 종료 (순수 대화/질문)
-        if response.command is None:
+        # 2. 로봇 실행 게이트 — 현재 붙은 LeRobot 정책은 ACT(`act-trash-gathering-danny`)로
+        #    '쓰레기 모으기' 단일 태스크만 수행하며 instruction '내용'으로 행동이 바뀌지 않는다.
+        #    따라서 "말 → 로봇 실행"의 의미 판단은 Language가 맡는다: 사용자 입력이
+        #    쓰레기-모으기 의도(키워드 포함)일 때만 5557로 트리거를 발행하고, 그 외 입력은
+        #    LLM 대화 답변만 하고 로봇을 건드리지 않는다.
+        if not self._is_trash_intent(user_text):
+            # LLM이 명령을 파싱했더라도 쓰레기 모으기 의도가 아니면 로봇은 실행하지 않는다.
+            if response.command is not None:
+                c = response.command
+                self.emit(
+                    f"[명령 파싱] action={c.action.value}, target={c.target}, "
+                    f"destination={c.destination} — 쓰레기 모으기 의도가 아니라 미실행"
+                )
             return
 
-        # 3. 명령이 있으면 처리
-        command = response.command
+        # 3. 쓰레기-모으기 의도 확정 → LeRobot 트리거 발행.
+        #    instruction 은 학습 task 명("trash_gathering")과 일치시켜 rollout 어댑터가
+        #    engine._task 로 주입하는 값이 학습 분포와 어긋나지 않게 한다.
+        command = RobotCommand(
+            action=ActionType.TRASH_GATHER,
+            instruction=TRASH_TASK_INSTRUCTION,
+            raw_input=user_text,
+            reasoning="쓰레기 모으기 의도 키워드 감지",
+            vision_confirmed=True,
+        )
 
-        # 3-1. move 액션: (target, direction) 을 'move_{target}_{direction}' 키로 조립한 뒤
-        #      ① 실행 가능한 등록 명령인지(화이트리스트) ② 대상이 카메라에 감지됐는지
-        #      둘 다 통과해야만 instruction 을 발행해 로봇이 움직이도록 한다.
-        if command.action == ActionType.MOVE:
-            key = command.move_command_key()
-
-            # ① 조립된 키가 실행 가능한 등록 명령인지
-            if key not in EXECUTABLE_MOVE_COMMANDS:
-                self.emit(
-                    f"[move 보류] 실행 가능한 명령이 아닙니다: {key} "
-                    f"(가능: {', '.join(sorted(EXECUTABLE_MOVE_COMMANDS))})"
-                )
-                return
-
-            # ② 대상 감지 게이팅 (box → BOX_LABELS 매핑, 그 외 → 라벨 직접)
-            if command.target == BOX_TARGET_TOKEN:
-                command.vision_confirmed = self.vision.has_any_label(self.config.box_labels)
-            else:
-                command.vision_confirmed = self.vision.has_label(command.target)
-
-            if not command.vision_confirmed:
-                if command.target == BOX_TARGET_TOKEN:
-                    self.emit(
-                        "[move 보류] 박스를 감지하지 못해 실행하지 않습니다 "
-                        f"(box로 인정하는 라벨: {', '.join(self.config.box_labels)}). "
-                        "overhead 캠에 박스가 보이는지 확인하세요."
-                    )
-                else:
-                    self.emit(f"[move 보류] '{command.target}' 가 감지되지 않아 실행하지 않습니다.")
-                return
-
-            self.emit(f"[move 명령 조립] {key}")
-        else:
-            command.vision_confirmed = self.vision.has_label(command.target)
-
-        # LeRobot Action 으로 instruction을 ZMQ로 발행 (활성화돼 있으면).
-        # Coordinator 경로와 독립적 — 현재 Vision 직결합 단계에서도 로봇은 바로 움직일 수 있다.
         published = False
         if self.instruction_publisher is not None:
             published = self.instruction_publisher.publish(command)
 
-        # envelope 구성 후 전송 — Coordinator가 활성화된 경우에만.
-        # 현재 Vision 직결합 단계에서는 Coordinator 송신 대상이 없으므로 파싱 결과를 stdout으로만 출력한다.
-        if not self.config.coordinator_enabled:
-            self.emit(f"[명령 파싱] action={command.action.value}, "
-                      f"target={command.target}, destination={command.destination}")
-            self.emit(f"[instruction] {command.instruction}")
-            self.emit(f"[근거] {command.reasoning}")
-            if published:
-                self.emit(f"[ZMQ 발행 → LeRobot] {self.config.instruction_pub_bind}")
-            else:
-                self.emit("[Coordinator 미전송 — 송신 대상 없음]")
-            return
-
-        envelope = {
-            "type": TOPIC_ROBOT_COMMAND,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sender": SENDER_LANGUAGE,
-            "data": command.model_dump(),
-        }
-
-        try:
-            await self.hub.send(envelope)
-        except (asyncio.TimeoutError, TimeoutError):
-            self.emit("[오류] Coordinator에 연결되어 있지 않아 명령 전송에 실패했습니다.")
-            return
-        except Exception as exc:
-            self.emit(f"[오류] 명령 전송 중 오류: {exc}")
-            return
-
-        self.emit(f"[명령 전송] action={command.action.value}, "
-                  f"target={command.target}, destination={command.destination}")
-        self.emit(f"[instruction] {command.instruction}")
-        self.emit(f"[근거] {command.reasoning}")
+        self.emit(f"[쓰레기 모으기 감지] instruction={command.instruction!r}")
         if published:
             self.emit(f"[ZMQ 발행 → LeRobot] {self.config.instruction_pub_bind}")
+        else:
+            self.emit(
+                "[미발행 — instruction publisher 비활성] "
+                ".env 의 INSTRUCTION_PUB_ENABLED=1 및 pyzmq 설치를 확인하세요."
+            )
+
+    def _is_trash_intent(self, user_text: str) -> bool:
+        """사용자 입력에 쓰레기-모으기 의도 키워드가 하나라도 포함됐는지."""
+        text = user_text.lower()
+        return any(kw.lower() in text for kw in self.config.trash_keywords)
+
+    def _is_stop_intent(self, user_text: str) -> bool:
+        """사용자 입력에 정지 의도 키워드가 하나라도 포함됐는지."""
+        text = user_text.lower()
+        return any(kw.lower() in text for kw in self.config.stop_keywords)
+
+    def _publish_stop(self, user_text: str) -> None:
+        """정지 트리거를 LeRobot 으로 발행. 실행 중이면 즉시 정지 + ACT 큐 비우기.
+
+        instruction 은 STOP_TASK_INSTRUCTION("stop") 고정 — rollout 어댑터가 이 값을
+        보고 실행 창 종료 + engine.reset() 을 수행한다. STOP 액션은 target/destination
+        이 불필요하다(스키마 validator 가 강제로 none 처리).
+        """
+        command = RobotCommand(
+            action=ActionType.STOP,
+            instruction=STOP_TASK_INSTRUCTION,
+            raw_input=user_text,
+            reasoning="정지 의도 키워드 감지",
+            vision_confirmed=True,
+        )
+
+        published = False
+        if self.instruction_publisher is not None:
+            published = self.instruction_publisher.publish(command)
+
+        self.emit(f"[정지 감지] instruction={command.instruction!r} — 즉시 정지 + ACT 큐 비우기")
+        if published:
+            self.emit(f"[ZMQ 발행 → LeRobot] {self.config.instruction_pub_bind}")
+        else:
+            self.emit(
+                "[미발행 — instruction publisher 비활성] "
+                ".env 의 INSTRUCTION_PUB_ENABLED=1 및 pyzmq 설치를 확인하세요."
+            )
 
     # -- 실행 --
 

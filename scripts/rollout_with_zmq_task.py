@@ -121,6 +121,17 @@ class TaskState:
     # 다시 False(=idle). idle 동안에는 get_action 이 None 을 돌려줘 로봇이 멈춰 있는다.
     executing: bool = False
     exec_started_at: float = 0.0
+    # 새 명령 수신 시 True → 메인 스레드가 실행 창 첫 스텝에 engine.reset() 한 번 하고 내린다.
+    # (ACT 내부 액션 큐/temporal-ensemble 잔여가 다음 트리거로 새지 않게)
+    reset_pending: bool = False
+    # 정지 명령 수신 시 True → 메인(get_action) 스레드가 다음 스텝에 즉시 실행 창을
+    # 종료(executing=False)하고 engine.reset()으로 ACT 큐/앙상블을 비운 뒤 내린다.
+    # SUB 스레드는 플래그만 세우고, 실제 reset 은 get_action 스레드에서만 호출한다(레이스 방지).
+    stop_requested: bool = False
+    # 청소 명령 수신 후 시작 지연 대기 상태. 대기 동안엔 초기 자세를 유지하고,
+    # pending_start_at 도달 시 get_action 스레드가 executing=True 로 전환한다.
+    pending: bool = False
+    pending_start_at: float = 0.0
 
 
 # --- ZMQ SUB 스레드 -------------------------------------------------------------
@@ -223,6 +234,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--start-delay",
+        type=float,
+        default=2.0,
+        help=(
+            "청소(트리거) 명령 수신 후 실제 실행을 시작하기까지의 대기 시간(초). 이 동안 "
+            "로봇은 초기 자세를 유지하고, 대기가 끝나면 exec-seconds 창이 시작된다. "
+            "0 이하면 지연 없이 즉시 시작. 게이팅(exec-seconds>0)에서만 적용. 기본 2.0."
+        ),
+    )
+    parser.add_argument(
+        "--stop-instruction",
+        default="stop",
+        help=(
+            "정지 sentinel. 이 문자열과 정확히 일치하는 instruction 이 도착하면 실행 창을 "
+            "즉시 종료(executing=False)하고 engine.reset() 으로 ACT 큐/앙상블을 비운다. "
+            "Language 의 STOP_TASK_INSTRUCTION 과 일치시켜야 한다(기본 'stop')."
+        ),
+    )
+    parser.add_argument(
         "--exec-seconds",
         type=float,
         default=8.0,
@@ -258,9 +288,12 @@ def run_dry(args: argparse.Namespace) -> int:
     stop = threading.Event()
 
     def _on_msg(text: str) -> None:
-        state.task = text
         state.updated_at = time.time()
         state.received_count += 1
+        if text == args.stop_instruction:
+            print(f"[dry-run] STOP ← {text!r} (#{state.received_count})", flush=True)
+            return
+        state.task = text
         print(f"[dry-run] task ← {text!r} (#{state.received_count})", flush=True)
 
     sub = InstructionSubscriber(
@@ -316,18 +349,45 @@ def run_with_lerobot(args: argparse.Namespace, lerobot_argv: list[str]) -> int:
     gate_enabled = args.exec_seconds > 0
 
     def _on_msg(text: str) -> None:
+        # 정지 명령 — 실행 창을 즉시 종료하고 ACT 큐를 비운다. engine.reset() 은 여기(SUB
+        # 스레드)서 직접 호출하지 않고, 플래그만 세워 get_action 스레드가 다음 스텝에 처리한다
+        # (get_action 과의 레이스 방지). task(_task)는 덮어쓰지 않는다 — idle 은 텍스트 무관.
+        if text == args.stop_instruction:
+            with state_lock:
+                state.executing = False
+                state.stop_requested = True
+                state.updated_at = time.time()
+                state.received_count += 1
+            log.info("STOP 수신 → 즉시 정지 + ACT 큐 비우기 요청 (다음 스텝 reset)")
+            return
+
+        now = time.time()
         with state_lock:
             state.task = text
-            state.updated_at = time.time()
+            state.updated_at = now
             state.received_count += 1
-            # 명령 수신 → 실행 창 시작 (원샷). 게이팅 비활성(exec_seconds<=0)이면 항상 실행.
-            state.executing = True
-            state.exec_started_at = time.time()
+            state.reset_pending = True   # 트리거 첫 실행 스텝에 엔진 reset 요청
+            # 명령 수신 → (게이팅) start_delay 만큼 대기 후 실행 시작. 대기 동안엔 초기
+            # 자세를 유지하고, 대기 종료 시점부터 exec_seconds 창을 카운트한다.
+            # 게이팅 비활성(exec_seconds<=0)이면 지연 없이 즉시 연속 실행.
+            if gate_enabled and args.start_delay > 0:
+                state.pending = True
+                state.pending_start_at = now + args.start_delay
+                state.executing = False
+            else:
+                state.pending = False
+                state.executing = True
+                state.exec_started_at = now
         engine = engine_ref.get("engine")
         if engine is not None:
             try:
                 apply_task(engine, text)
-                if gate_enabled:
+                if gate_enabled and args.start_delay > 0:
+                    log.info(
+                        "task updated → %r (#%d) — %.1fs 대기 후 %.1fs 동안 실행",
+                        text, state.received_count, args.start_delay, args.exec_seconds,
+                    )
+                elif gate_enabled:
                     log.info(
                         "task updated → %r (#%d) — %.1fs 동안 실행 후 정지",
                         text, state.received_count, args.exec_seconds,
@@ -413,11 +473,53 @@ def run_with_lerobot(args: argparse.Namespace, lerobot_argv: list[str]) -> int:
 
                 def _gated_get_action(obs_frame: Any) -> Any:
                     now = time.time()
+                    do_reset = False
+                    do_stop = False
+                    do_begin = False
                     with state_lock:
-                        if state.executing and (now - state.exec_started_at) >= args.exec_seconds:
+                        if state.stop_requested:
+                            # 정지 명령: 실행 중이든 대기 중이든 즉시 실행/대기 취소 + 큐 비우기.
+                            state.stop_requested = False
                             state.executing = False
-                            log.info("실행 창 종료 → 초기 자세로 복귀/유지")
+                            state.pending = False   # 대기 중이던 청소도 취소
+                            state.reset_pending = False
+                            do_stop = True
+                        else:
+                            # 시작 지연(start_delay) 대기 종료 → 실행 시작. exec 창은 여기서부터.
+                            if state.pending and now >= state.pending_start_at:
+                                state.pending = False
+                                state.executing = True
+                                state.exec_started_at = now
+                                do_begin = True
+                            if state.executing and (now - state.exec_started_at) >= args.exec_seconds:
+                                state.executing = False
+                                log.info("실행 창 종료 → 초기 자세로 복귀/유지")
                         active = state.executing
+                        if active and state.reset_pending:
+                            state.reset_pending = False
+                            do_reset = True
+                    if do_begin:
+                        log.info("%.1fs 대기 종료 → 청소 실행 시작", args.start_delay)
+                    if do_stop:
+                        # 정지: ACT 내부 액션 큐/temporal-ensemble 버퍼를 비워 즉시 멈춘다.
+                        # active=False 이므로 아래에서 hold_action(초기 자세)로 복귀/유지한다.
+                        # 메인(get_action) 스레드에서만 호출 → get_action 과의 레이스 없음.
+                        try:
+                            if hasattr(engine, "reset"):
+                                engine.reset()
+                        except Exception:  # noqa: BLE001
+                            log.exception("STOP engine.reset 실패 — 무시하고 진행")
+                        log.info("STOP 처리 → 즉시 정지 + ACT 큐/앙상블 비움 → 초기 자세로 복귀/유지")
+                    if do_reset:
+                        # 새 명령의 첫 스텝: ACT 내부 액션 큐/temporal-ensemble 버퍼를 비워
+                        # 직전 실행의 잔여 액션이 이어지지 않게 한다(트리거 간 동작 불일치 방지).
+                        # 메인(get_action) 스레드에서만 호출 → get_action 과의 레이스 없음.
+                        try:
+                            if hasattr(engine, "reset"):
+                                engine.reset()
+                                log.info("새 명령 시작 → 추론 엔진 reset (ACT 큐/앙상블 초기화)")
+                        except Exception:  # noqa: BLE001
+                            log.exception("engine.reset 실패 — 무시하고 진행")
                     if not active:
                         # idle: 초기 자세를 계속 명령해 그 포즈에 고정 (없으면 무명령)
                         return hold_action

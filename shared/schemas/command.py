@@ -13,6 +13,9 @@ class ActionType(str, Enum):
     MOVE = "move"
     HOME = "home"
     STOP = "stop"
+    # 쓰레기-모으기(ACT) 단일 태스크 트리거. target/destination 불필요 — Language의
+    # 키워드 의도 게이트가 만들어내는 전용 액션이며, LLM이 직접 내보내지는 않는다.
+    TRASH_GATHER = "trash_gather"
 
 
 class RobotCommand(BaseModel):
@@ -91,4 +94,7 @@ def _derive_instruction(
         return "move to the home position"
     if action == ActionType.STOP:
         return "stop"
+    if action == ActionType.TRASH_GATHER:
+        # 학습 task 명과 동일하게 유지 (rollout 어댑터가 engine._task 로 주입).
+        return "trash_gathering"
     return ""

@@ -83,3 +83,44 @@ EXECUTABLE_MOVE_COMMANDS = frozenset({"move_box_left", "move_mouse_left"})
 # JSON envelope를 받으면 된다. envelope 스키마는 InstructionPublisher 참고.
 # ----------------------------------------------------------------------------
 INSTRUCTION_PUB_BIND_DEFAULT = "tcp://*:5557"
+
+
+# ----------------------------------------------------------------------------
+# 쓰레기-모으기(ACT) 트리거 게이팅.
+#
+# 현재 붙어 있는 LeRobot 정책 `act-trash-gathering-danny` 는 ACT(언어 비조건부)라
+# instruction 텍스트의 '내용'으로 행동이 바뀌지 않는다 — 뭐라 말하든 학습된 단일
+# 태스크(쓰레기 모으기)만 수행한다. 따라서 "말 → 로봇 실행"의 의미 판단은 Language가
+# 맡는다: 사용자 입력이 쓰레기-모으기 의도(아래 키워드 중 하나 포함)일 때만 5557로
+# 트리거를 발행하고, 그 외 입력은 대화 답변만 하고 로봇을 건드리지 않는다.
+#
+# 키워드는 환경변수 TRASH_KEYWORDS(쉼표 구분)로 덮어쓸 수 있다.
+TRASH_KEYWORDS_DEFAULT: tuple[str, ...] = (
+    "쓰레기", "모아", "모으", "주워", "주어", "치워", "정리", "청소", "버려", "깨끗",
+    "trash", "garbage", "gather", "clean up", "clean", "tidy", "pick up the trash",
+)
+
+# 발행할 instruction 문자열. ACT는 내용을 무시하지만, 학습 task 명("trash_gathering")과
+# 정확히 일치시켜 rollout 어댑터가 engine._task 에 넣는 값이 학습 분포와 어긋나지 않게 한다.
+TRASH_TASK_INSTRUCTION = "trash_gathering"
+
+
+# ----------------------------------------------------------------------------
+# 정지(STOP) 트리거 게이팅.
+#
+# 사용자가 정지 의도(아래 키워드 중 하나 포함)를 말하면, 실행 중이던 ACT 롤아웃을
+# 즉시 멈추고 초기 대기 자세로 복귀시킨다. 트리거/쓰레기-모으기와 달리 이건 LLM
+# 왕복 없이 Language 가 최우선으로 처리한다(즉각성). rollout 어댑터는 이 전용
+# instruction 을 받으면 실행 창을 즉시 종료(executing=False)하고 engine.reset() 으로
+# ACT 액션 큐/temporal-ensemble 을 비운다.
+#
+# 키워드는 환경변수 STOP_KEYWORDS(쉼표 구분)로 덮어쓸 수 있다.
+STOP_KEYWORDS_DEFAULT: tuple[str, ...] = (
+    "정지", "멈춰", "멈춤", "멈춰줘", "그만", "그만해", "중지", "스톱",
+    "stop", "halt", "freeze", "hold",
+)
+
+# 발행할 정지 instruction 문자열(=ActionType.STOP.value). rollout 어댑터가 이 값을
+# 받으면 즉시 정지 + ACT 큐 비우기를 수행한다. 비어 있으면 parse_instruction 이
+# None 으로 버려 무시되므로, 반드시 비지 않은 sentinel 이어야 한다.
+STOP_TASK_INSTRUCTION = "stop"
